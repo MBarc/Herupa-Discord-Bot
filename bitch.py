@@ -20,15 +20,5 @@ class Bitch(commands.Cog):
         #await ctx.message.channel.send(f"Hey {twinkie}, they're calling you.")
         await ctx.message.channel.send(f"This command is no longer operational.")
 
-    @bitch.error
-    async def bitch_error(self, ctx, error):
-
-        commandName = ctx.invoked_with
-        error = str(error)
-
-        # Testing!
-        herupaErrorLogChannel = self.client.get_channel(configFile()["herupaErrorLogChannel"])
-        await herupaErrorLogChannel.send(f"{commandName.upper()} error: {error}")
-
 def setup(client):
     client.add_cog(Bitch(client))
