@@ -26,6 +26,7 @@ class Bitch(commands.Cog):
         commandName = ctx.invoked_with
         error = str(error)
 
+        # Testing!
         herupaErrorLogChannel = self.client.get_channel(configFile()["herupaErrorLogChannel"])
         await herupaErrorLogChannel.send(f"{commandName.upper()} error: {error}")
 
