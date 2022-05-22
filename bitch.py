@@ -23,6 +23,7 @@ class Bitch(commands.Cog):
         
         #TESTING TESTING TESTING
         # testing testing testing
+        # hello world!
         
 def setup(client):
     client.add_cog(Bitch(client))
