@@ -20,5 +20,8 @@ class Bitch(commands.Cog):
         #await ctx.message.channel.send(f"Hey {twinkie}, they're calling you.")
         await ctx.message.channel.send(f"This command is no longer operational.")
 
+        
+        TESTING TESTING TESTING
+        
 def setup(client):
     client.add_cog(Bitch(client))
