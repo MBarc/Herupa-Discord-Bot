@@ -29,7 +29,7 @@ class Bitch(commands.Cog):
         herupaErrorLogChannel = self.client.get_channel(configFile()["herupaErrorLogChannel"])
         await herupaErrorLogChannel.send(f"{commandName.upper()} error: {error}")
         
-# super testing
+# testing super late at night
 
 def setup(client):
     client.add_cog(Bitch(client))
