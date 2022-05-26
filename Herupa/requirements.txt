@@ -8,3 +8,4 @@ better-profanity
 beautifulsoup4
 geopy
 PyNaCl
+cogwatch
