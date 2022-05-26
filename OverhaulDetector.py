@@ -1,4 +1,3 @@
-#!/usr/bin/python3
 """
 Purpose: This program will detect when Herupa has received an update to her Github and automatically update her code. This program does not update itself.
 
