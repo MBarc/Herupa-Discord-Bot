@@ -268,8 +268,5 @@ if __name__ == "__main__":
     with open('myfile.txt', 'w') as fp:
         pass
 
-    # Grabbing the behavior the script should execute
-    behavior = str(sys.argv[1]).lower()
-
     od = OverhaulDetector()
     od.main(behavior="standard")
