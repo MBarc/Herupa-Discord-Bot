@@ -265,6 +265,8 @@ class OverhaulDetector:
                                 self.add_to_queue(queue, url, commitResponse, file)
 
 if __name__ == "__main__":
+    
+    print("Testing for docker!")
 
     # Grabbing the behavior the script should execute
     behavior = str(sys.argv[1]).lower()
