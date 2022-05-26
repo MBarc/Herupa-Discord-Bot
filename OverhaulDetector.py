@@ -266,7 +266,8 @@ class OverhaulDetector:
 
 if __name__ == "__main__":
     
-    print("Testing for docker!")
+    with open('myfile.txt', 'w') as fp:
+        pass
 
     # Grabbing the behavior the script should execute
     behavior = str(sys.argv[1]).lower()
