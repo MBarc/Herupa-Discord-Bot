@@ -25,6 +25,8 @@ class HerupaSay(commands.Cog):
                       aliases=['hs', 'hearmygirlfriendsvoice'])
     async def herupasay(self, ctx):
 
+        ctx.channel.send("This command was updated automatically.")
+        
         if ctx.message.author.id == 353315864726077471:
             ctx.channel.send("You are not allowed to use this command.")
             return
