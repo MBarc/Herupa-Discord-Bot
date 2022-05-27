@@ -67,7 +67,7 @@ class HerupaSay(commands.Cog):
         r = requests.get(url)
 
         # Preparing the path that where we'll store the mp3 file
-        audio_file = str(Path.cwd() / "cogs/audio_repo/phrase.mp3")
+        audio_file = str(Path.cwd() / "audio_repo/phrase.mp3")
 
         # Creating the mp3 file
         with open(audio_file, "wb+") as file:
