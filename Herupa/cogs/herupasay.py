@@ -71,7 +71,7 @@ class HerupaSay(commands.Cog):
         # Preparing the path that where we'll store the mp3 file
         audio_file = str(Path.cwd() / "audio_repo/phrase.mp3")
         
-        discord.opus.load_opus()
+        discord.opus.load_opus("opus")
 
         # Creating the mp3 file
         with open(audio_file, "wb+") as file:
