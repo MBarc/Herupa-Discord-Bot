@@ -10,6 +10,7 @@ import requests
 import json
 import os
 import logging
+from discord_webhook import DiscordWebhook, DiscordEmbed
 
 class OverhaulDetector:
 
@@ -19,6 +20,7 @@ class OverhaulDetector:
         self.branch: str = branch
         self.herupaCogLocation: str = "./Herupa/cogs"
         self.githubPAT = os.environ.get("GITHUB_PAT")
+        self.updateLogWebhook = "https://discordapp.com/api/webhooks/980949892434374736/bqQsDwSizpxMUYHsbaXRky7Tt6ZAXOew6hYdKU-g4Kx3-cV30CBtCSyzRZ96UC2tyVqZ"
 
 
     def ensure_queue_exists(self, filename = "./queue.json"):
@@ -186,6 +188,31 @@ class OverhaulDetector:
             # Actually writing the queue back to the queue file
             self.write_json_to_file(dict=queue, filename="queue.json")
 
+    def updateLog(self, files):
+
+        # Formatting the list of files names so we can put them in a message
+        listFiles = ''.join([file["filename"] + "\n" for file in files])
+
+        # Creating the webhook object
+        webhook = DiscordWebhook(url=self.updateLogWebhook)
+
+        # Getting the current time so that info can be added to the update message
+        currentTime = datetime.now()
+
+        # Adding the information to the webhook
+        embed = DiscordEmbed(title=f"Updated Detected on {currentTime.month}-{currentTime.day}-{currentTime.year} at {currentTime.hour}:{currentTime.minute}", description=listFiles, color='ffb7c5')
+        
+        # Setting a disclaimer
+        embed.set_footer(text='Updates are applied ~5 minutes after they are detected.')
+
+        # Adding our embed object to the payload that we are going to sen 
+        webhook.add_embed(embed)
+
+        # Actually sending our payload to our webhook
+        webhook.execute()
+
+        return
+
 
     def main(self, behavior):
 
@@ -258,6 +285,9 @@ class OverhaulDetector:
                                 # Adding a process to the queue
                                 logging.info("Added the file to be processed by the queue.")
                                 self.add_to_queue(queue, url, commitResponse, file)
+
+                # Sending an update notification to the discord server
+                self.updateLog(commitResponse["files"])
 
 if __name__ == "__main__":
 
