@@ -20,7 +20,7 @@ class Bitch(commands.Cog):
         #await ctx.message.channel.send(f"Hey {twinkie}, they're calling you.")
         await ctx.message.channel.send(f"This command is no longer operational.")
         
-        # testing testing testing testing testing testing
+        # testing testing
 
     @bitch.error
     async def bitch_error(self, ctx, error):
