@@ -152,9 +152,6 @@ class OverhaulDetector:
         
         if len(queue["entries"].keys()) == 0:
 
-            webhook = DiscordWebhook(url=self.updateLogWebhook, content=f'0 entries found, adding new one -> {file["filename"]}')
-            webhook.execute()
-
             # Updating the queue with a new entry
             queue["entries"].update({"0": {"url": url, "filename": f"/herupa/{file['filename']}", "date": f'{commitResponse["commit"]["author"]["date"]}'}})
             
