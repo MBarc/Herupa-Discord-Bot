@@ -36,18 +36,17 @@ class OverhaulDetector:
 
             self.write_json_to_file(filename, template)
         
-        else:
 
-            with open("./queue.json", "r+") as queueFile:
-                queue = json.load(queueFile)
+        with open("./queue.json", "r+") as queueFile:
+            queue = json.load(queueFile)
 
-                if not "lastUpdated" in queue:
-                    queue["lastUpdated"] = self.datetime_to_github_format(datetime.utcnow())
+            if not "lastUpdated" in queue:
+                queue["lastUpdated"] = self.datetime_to_github_format(datetime.utcnow())
 
-                if not "entries" in queue:
-                    queue["entries"] = {}
+            if not "entries" in queue:
+                queue["entries"] = {}
 
-                self.write_json_to_file(filename="./queue.json", dict=queue)
+            self.write_json_to_file(filename="./queue.json", dict=queue)
 
 
     def datetime_to_github_format(self, datetimeObject):
@@ -57,19 +56,7 @@ class OverhaulDetector:
         githubFormat = f"{datetimeObject.year}-{datetimeObject.month}-{datetimeObject.day}T{datetimeObject.hour}:{datetimeObject.minute}:{datetimeObject.second}Z"
 
         return githubFormat
-
-
-    def get_pat():
-        """
-        Gets a Github Personal Accesss Token from a local .txt file.
-        """
-
-        with open('pat.txt') as f:
-            pat = f.readline()
-
-        # Returning pat as string
-        return pat
-
+        
 
     def download_file(self, url, filename):
         """
@@ -120,7 +107,7 @@ class OverhaulDetector:
         Processing the queue. This involves downloading the files listed in the queue.
         """
 
-        with open("queue.json", "r+") as queueFile:
+        with open("./queue.json", "r+") as queueFile:
             
             # Actually loading the queue data into memory
             queue = json.load(queueFile)
@@ -151,7 +138,7 @@ class OverhaulDetector:
                         # Removing the key from the json so we don't process it again
                         queue["entries"].pop(key)
                         queue["lastUpdated"] = self.datetime_to_github_format(datetimeObject=datetime.utcnow())
-                        self.write_json_to_file(dict=queue, filename="queue.json")
+                        self.write_json_to_file(dict=queue, filename="./queue.json")
 
 
     def add_to_queue(self, queue, url, commitResponse, file):
@@ -173,7 +160,7 @@ class OverhaulDetector:
             queue["lastUpdated"] = self.datetime_to_github_format(datetimeObject=datetime.utcnow())
             
             # Actually writing the queue back to the queue file
-            self.write_json_to_file(dict=queue, filename="queue.json")
+            self.write_json_to_file(dict=queue, filename="./queue.json")
         else:
             
             # Grabbing the last key in the queue and casting it to an int
@@ -192,7 +179,7 @@ class OverhaulDetector:
             webhook.execute()
             
             # Actually writing the queue back to the queue file
-            self.write_json_to_file(dict=queue, filename="queue.json")
+            self.write_json_to_file(dict=queue, filename="./queue.json")
 
     def updateLog(self, files):
 
@@ -280,7 +267,7 @@ class OverhaulDetector:
                             logging.info("Detected that the cog file was either added or modified! Continuing. . .")
 
                             # Opening up out queue file to read and write to
-                            with open("queue.json", "r+") as queueFile:
+                            with open("./queue.json", "r+") as queueFile:
                                 
                                 # Actually loading the queue data into memory
                                 queue = json.load(queueFile)
