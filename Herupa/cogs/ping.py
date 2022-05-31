@@ -18,7 +18,7 @@ class Ping(commands.Cog):
     @commands.command()
     async def ping(self, ctx):
 
-        await ctx.channel.send("pong!")
+        await ctx.channel.send("pong! pingy pong!")
 
 
     @ping.error
