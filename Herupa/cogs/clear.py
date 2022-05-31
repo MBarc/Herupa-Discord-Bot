@@ -10,6 +10,8 @@ from config import configFile
 import random
 from discord.ext import commands
 
+# testing testing testing remove this line
+
 class Clear(commands.Cog):
 
     def __init__(self, client):
