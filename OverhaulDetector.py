@@ -21,7 +21,7 @@ class OverhaulDetector:
         self.branch: str = branch
         self.herupaCogLocation: str = "./Herupa/cogs"
         self.githubPAT = os.environ.get("GITHUB_PAT")
-        self.updateLogWebhook = "https://discordapp.com/api/webhooks/980949892434374736/bqQsDwSizpxMUYHsbaXRky7Tt6ZAXOew6hYdKU-g4Kx3-cV30CBtCSyzRZ96UC2tyVqZ"
+        self.updateLogWebhook = os.environ.get("WEBHOOK_URL")
 
 
     def ensure_queue_exists(self, filename = "./queue.json"):
@@ -99,13 +99,8 @@ class OverhaulDetector:
         """
         Writes the dict object to the specified file
         """
-
-        webhook = DiscordWebhook(url=self.updateLogWebhook, content=f"{dict}")
-        webhook.execute()
         
         with open(filename, 'w') as f:
-            webhook = DiscordWebhook(url=self.updateLogWebhook, content=f"Writing to file!")
-            webhook.execute()
             json.dump(dict, f, indent=4)
 
 
@@ -154,8 +149,6 @@ class OverhaulDetector:
         """
         
         logging.info(f"Adding {file} to queue. . .")
-        webhook = DiscordWebhook(url=self.updateLogWebhook, content=f"Adding {file} to queue. . .")
-        webhook.execute()
         
         if len(queue["entries"].keys()) == 0:
 
@@ -183,9 +176,6 @@ class OverhaulDetector:
 
             # Writing down when the queue was last updated
             queue["lastUpdated"] = self.datetime_to_github_format(datetimeObject=datetime.utcnow())
-            
-            webhook = DiscordWebhook(url=self.updateLogWebhook, content=queue)
-            webhook.execute()
             
             # Actually writing the queue back to the queue file
             self.write_json_to_file(dict=queue, filename="./queue.json")
