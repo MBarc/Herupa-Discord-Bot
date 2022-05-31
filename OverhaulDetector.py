@@ -6,6 +6,7 @@ Note: This program is designed to be executed, via Crontab, once every minute.
 """
 
 from datetime import datetime
+from fileinput import filename
 import requests
 import json
 import os
@@ -56,7 +57,7 @@ class OverhaulDetector:
         githubFormat = f"{datetimeObject.year}-{datetimeObject.month}-{datetimeObject.day}T{datetimeObject.hour}:{datetimeObject.minute}:{datetimeObject.second}Z"
 
         return githubFormat
-        
+
 
     def download_file(self, url, filename):
         """
@@ -98,6 +99,10 @@ class OverhaulDetector:
         """
         Writes the dict object to the specified file
         """
+
+        webhook = DiscordWebhook(url=self.updateLogWebhook, content=f"{dict}")
+        webhook.execute()
+        
         with open(filename, 'w') as f:
             json.dump(dict, f, indent=4)
 
@@ -147,10 +152,12 @@ class OverhaulDetector:
         """
         
         logging.info(f"Adding {file} to queue. . .")
+        webhook = DiscordWebhook(url=self.updateLogWebhook, content=f"Adding {file} to queue. . .")
+        webhook.execute()
         
         if len(queue["entries"].keys()) == 0:
 
-            webhook = DiscordWebhook(url=self.updateLogWebhook, content=f'0 entries found, adding new one -> {file}')
+            webhook = DiscordWebhook(url=self.updateLogWebhook, content=f'0 entries found, adding new one -> {file["filename"]}')
             webhook.execute()
 
             # Updating the queue with a new entry
