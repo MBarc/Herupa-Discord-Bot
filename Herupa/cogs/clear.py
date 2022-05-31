@@ -10,7 +10,7 @@ from config import configFile
 import random
 from discord.ext import commands
 
-# testing testing testing testing testing testing
+# testing testing testing testing testing testing testing testing testing testing
 
 class Clear(commands.Cog):
 
