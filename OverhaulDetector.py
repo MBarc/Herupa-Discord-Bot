@@ -163,6 +163,9 @@ class OverhaulDetector:
         
         if len(queue["entries"].keys()) == 0:
 
+            webhook = DiscordWebhook(url=self.updateLogWebhook, content=f'0 entries found, adding new one -> {file}')
+            webhook.execute()
+
             # Updating the queue with a new entry
             queue["entries"].update({"0": {"url": url, "filename": f"./Herupa/{file['filename']}", "date": f'{commitResponse["commit"]["author"]["date"]}'}})
             
@@ -184,6 +187,9 @@ class OverhaulDetector:
 
             # Writing down when the queue was last updated
             queue["lastUpdated"] = self.datetime_to_github_format(datetimeObject=datetime.utcnow())
+            
+            webhook = DiscordWebhook(url=self.updateLogWebhook, content=queue)
+            webhook.execute()
             
             # Actually writing the queue back to the queue file
             self.write_json_to_file(dict=queue, filename="queue.json")
