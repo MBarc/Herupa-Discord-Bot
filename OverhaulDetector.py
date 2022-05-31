@@ -163,7 +163,7 @@ class OverhaulDetector:
             webhook.execute()
 
             # Updating the queue with a new entry
-            queue["entries"].update({"0": {"url": url, "filename": f"./Herupa/{file['filename']}", "date": f'{commitResponse["commit"]["author"]["date"]}'}})
+            queue["entries"].update({"0": {"url": url, "filename": f"/herupa/{file['filename']}", "date": f'{commitResponse["commit"]["author"]["date"]}'}})
             
             # Writing down when the queue was last updated
             queue["lastUpdated"] = self.datetime_to_github_format(datetimeObject=datetime.utcnow())
