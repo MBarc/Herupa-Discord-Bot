@@ -3,9 +3,9 @@
 
 FROM python:3.9.13-alpine3.16
 
-ENV DISCORD_TOKEN=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-ENV GITHUB_PAT=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-ENV WEBHOOK_URL=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+ENV DISCORD_TOKEN=XXXXXXXXXXXXXXXXXXXX
+ENV GITHUB_PAT=XXXXXXXXXXXXXXXXXXXX
+ENV WEBHOOK_URL=XXXXXXXXXXXXXXXXXXXX
 
 # Updating the 
 RUN apk update
@@ -32,7 +32,11 @@ RUN chmod 777 /herupa/queue.json
 RUN echo "* * * * * cd /herupa && python /herupa/OverhaulDetector.py >> /herupa/OverhaulDetectorLog.txt" | crontab -
 RUN echo "# LEAVE THIS EMPTY LINE" >> /etc/crontabs/root
 
-ADD start.sh /herupa/Herupa/
+RUN touch /herupa/Herupa/start.sh
 RUN chmod +x /herupa/Herupa/start.sh
+RUN echo "#!/bin/sh" >> /herupa/Herupa/start.sh
+RUN echo "cd herupa/Herupa" >> /herupa/Herupa/start.sh
+RUN echo "crond && python ./bot.py &" >> /herupa/Herupa/start.sh
+RUN echo "/bin/sh" >> /herupa/Herupa/start.sh
 
 ENTRYPOINT [ "/herupa/Herupa/start.sh"]
