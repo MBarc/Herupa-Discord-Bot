@@ -229,6 +229,10 @@ class OverhaulDetector:
             commitURL = f"https://api.github.com/repos/{self.githubUsername}/{self.repoName}/commits/{latestSHA}"
             commitResponse = requests.get(commitURL, headers=headers).json()
             timeSinceLastCommit = self.time_since_last_commit(commitResponse["commit"]["author"]["date"])
+            
+            webhook = DiscordWebhook(url=self.updateLogWebhook, content=f'timeSinceLastCommit is {timeSinceLastCommit}\nCommit date is {commitResponse["commit"]["author"]["date"]}\nCurrent UTC time is {datetime.utcnow()}')
+            webhook.execute()
+            
 
             # If the last commit just occured
             if timeSinceLastCommit <= 0:
