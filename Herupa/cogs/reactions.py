@@ -48,6 +48,14 @@ class Reactions(commands.Cog):
             if str(emoji) == "4️⃣":
                 amongUsRole = get(member.guild.roles, name='among us')
                 await member.add_roles(amongUsRole)
+                
+            if str(emoji) == "5️⃣":
+                amongUsRole = get(member.guild.roles, name='minecraft')
+                await member.add_roles(amongUsRole)
+                
+            if str(emoji) == "6️⃣":
+                amongUsRole = get(member.guild.roles, name='rust')
+                await member.add_roles(amongUsRole)
 
             # Gender Pronouns
 
@@ -106,6 +114,14 @@ class Reactions(commands.Cog):
 
             if str(emoji) == "4️⃣":
                 amongUsRole = get(member.guild.roles, name='among us')
+                await member.remove_roles(amongUsRole)
+                
+            if str(emoji) == "5️⃣":
+                amongUsRole = get(member.guild.roles, name='minecraft')
+                await member.remove_roles(amongUsRole)
+                
+            if str(emoji) == "6️⃣":
+                amongUsRole = get(member.guild.roles, name='rust')
                 await member.remove_roles(amongUsRole)
 
             # Gender Pronouns
