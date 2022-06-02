@@ -26,10 +26,6 @@ class HerupaSay(commands.Cog):
                       aliases=['hs', 'hearmygirlfriendsvoice'])
     async def herupasay(self, ctx):
 
-        if ctx.message.author.id == 353315864726077471:
-            ctx.channel.send("You are not allowed to use this command.")
-            return
-
         # Getting the member so we know who to connect to
         member = ctx.message.author
 
