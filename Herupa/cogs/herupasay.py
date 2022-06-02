@@ -11,9 +11,10 @@ from discord.ext import commands
 
 # Importing libraries specifically used for this command
 import discord
+import ctypes
+import requests
 from better_profanity import profanity
 from discord.utils import get
-import requests
 
 
 class HerupaSay(commands.Cog):
@@ -25,10 +26,8 @@ class HerupaSay(commands.Cog):
                       aliases=['hs', 'hearmygirlfriendsvoice'])
     async def herupasay(self, ctx):
 
-        await ctx.channel.send("This command was updated automatically.")
-        
         if ctx.message.author.id == 353315864726077471:
-            await ctx.channel.send("You are not allowed to use this command.")
+            ctx.channel.send("You are not allowed to use this command.")
             return
 
         # Getting the member so we know who to connect to
@@ -70,8 +69,10 @@ class HerupaSay(commands.Cog):
 
         # Preparing the path that where we'll store the mp3 file
         audio_file = str(Path.cwd() / "audio_repo/phrase.mp3")
-        
-        discord.opus.load_opus("opus")
+
+        # Loading up opus so we can play audio over the internet
+        opuslib = ctypes.util.find_library("opus")
+        discord.opus.load_opus(opuslib)
 
         # Creating the mp3 file
         with open(audio_file, "wb+") as file:
