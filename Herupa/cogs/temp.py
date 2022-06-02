@@ -1,4 +1,4 @@
-#
+# This is a temp command to do small, one-time tasks. This command can be deleted if needed.
 
 import discord
 from discord.ext import commands
@@ -10,7 +10,10 @@ class Temp(commands.Cog):
 
     @commands.command()
     async def temp(self, ctx):
-
+        
+        if ctx.message.author != ctx.message.guild.owner:
+            await ctx.message.send("Only the server owner can run this command!")
+            return
 
         target = await ctx.message.channel.fetch_message(727219710428708947)
 
