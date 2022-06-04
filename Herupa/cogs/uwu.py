@@ -28,11 +28,6 @@ class UWU(commands.Cog):
         # Getting the member so we know who to connect to
         member = ctx.message.author
 
-        # If the user didn't put anything for Herupa to say
-        if len(ctx.message.content.split(" ")) <= 1:
-            await ctx.channel.send("Sorry, what was it that you wanted me to say?")
-            return
-
         # If the user put profanity to
         if profanity.contains_profanity(ctx.message.content):
             await ctx.channel.send("I'm not saying that. . .")
