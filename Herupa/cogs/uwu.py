@@ -59,7 +59,7 @@ class UWU(commands.Cog):
         voice.source.volume = 0.90
 
     @uwu.error
-    async def herupa_error(self, ctx, error):
+    async def uwu_error(self, ctx, error):
 
         commandName = ctx.invoked_with
         error = str(error)
