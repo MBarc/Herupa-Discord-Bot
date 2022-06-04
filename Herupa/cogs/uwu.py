@@ -28,14 +28,6 @@ class UWU(commands.Cog):
         # Getting the member so we know who to connect to
         member = ctx.message.author
 
-        # If the user put profanity to
-        if profanity.contains_profanity(ctx.message.content):
-            await ctx.channel.send("I'm not saying that. . .")
-            return
-
-        # Getting the content of the message and making it be URL compatible
-        content = ctx.message.content.split(" ", 1)[1].replace(" ", "%20")
-
         # Checking to see if the member is in a voice chat
         if member.voice is None:
             await ctx.channel.send("You need to be in a voice channel to use this command.")
