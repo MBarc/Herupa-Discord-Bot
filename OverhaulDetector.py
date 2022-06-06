@@ -6,12 +6,11 @@ Note: This program is designed to be executed, via Crontab, once every minute.
 """
 
 from datetime import datetime
-from fileinput import filename
 import requests
 import json
+import sys
 import os
 import logging
-from discord_webhook import DiscordWebhook, DiscordEmbed
 
 class OverhaulDetector:
 
@@ -20,8 +19,7 @@ class OverhaulDetector:
         self.repoName: str = repoName
         self.branch: str = branch
         self.herupaCogLocation: str = "./Herupa/cogs"
-        self.githubPAT = os.environ.get("GITHUB_PAT")
-        self.updateLogWebhook = os.environ.get("WEBHOOK_URL")
+        self.githubPAT = "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"
 
 
     def ensure_queue_exists(self, filename = "./queue.json"):
@@ -37,17 +35,18 @@ class OverhaulDetector:
 
             self.write_json_to_file(filename, template)
         
+        else:
 
-        with open("./queue.json", "r+") as queueFile:
-            queue = json.load(queueFile)
+            with open("./queue.json", "r+") as queueFile:
+                queue = json.load(queueFile)
 
-            if not "lastUpdated" in queue:
-                queue["lastUpdated"] = self.datetime_to_github_format(datetime.utcnow())
+                if not "lastUpdated" in queue:
+                    queue["lastUpdated"] = self.datetime_to_github_format(datetime.utcnow())
 
-            if not "entries" in queue:
-                queue["entries"] = {}
+                if not "entries" in queue:
+                    queue["entries"] = {}
 
-            self.write_json_to_file(filename="./queue.json", dict=queue)
+                self.write_json_to_file(filename="./queue.json", dict=queue)
 
 
     def datetime_to_github_format(self, datetimeObject):
@@ -59,6 +58,18 @@ class OverhaulDetector:
         return githubFormat
 
 
+    def get_pat():
+        """
+        Gets a Github Personal Accesss Token from a local .txt file.
+        """
+
+        with open('pat.txt') as f:
+            pat = f.readline()
+
+        # Returning pat as string
+        return pat
+
+
     def download_file(self, url, filename):
         """
         Downloads a file from the given url.
@@ -66,7 +77,7 @@ class OverhaulDetector:
 
         # Creating directory if it does not exist
         if not os.path.exists(os.path.dirname(filename)):
-            #print("Path doesn't exist locally so creating it. . .")
+            print("Path doesn't exist locally so creating it. . .")
             os.makedirs(os.path.dirname(filename))
 
         with requests.get(url, stream=True) as r:
@@ -84,7 +95,11 @@ class OverhaulDetector:
         utcTime = datetime.utcnow()
         githubTime = datetime.strptime(github_time, "%Y-%m-%dT%H:%M:%SZ")
 
-        return int(((utcTime - githubTime).seconds / 60))
+        # Checking to see if the commit is on the same day, if not return 1
+        if githubTime.day == utcTime.day:
+            return int(((utcTime - githubTime).seconds / 60))
+        
+        return 1
 
 
     def diff_between_times(self, olderTime, recentTime):
@@ -99,7 +114,6 @@ class OverhaulDetector:
         """
         Writes the dict object to the specified file
         """
-        
         with open(filename, 'w') as f:
             json.dump(dict, f, indent=4)
 
@@ -109,7 +123,7 @@ class OverhaulDetector:
         Processing the queue. This involves downloading the files listed in the queue.
         """
 
-        with open("./queue.json", "r+") as queueFile:
+        with open("queue.json", "r+") as queueFile:
             
             # Actually loading the queue data into memory
             queue = json.load(queueFile)
@@ -123,7 +137,7 @@ class OverhaulDetector:
                 # Go through each key to process the paired values
                 for key in list(queue["entries"].keys()):
 
-                    #print("about to process this -> ", key)
+                    print("about to process this -> ", key)
 
                     queueURL = filename = queue["entries"].get(key)["url"]
                     filename = queue["entries"].get(key)["filename"]
@@ -131,6 +145,8 @@ class OverhaulDetector:
 
                     #if 5 minutes have passed
                     if self.diff_between_times(dateQueued, datetime.utcnow()) >= 5:
+
+                        print("Five minutes have passed!")
 
                         # Note: We have to process the commit 5 minutes after we notice it because the Github Raw link updates after 5 minutes.
 
@@ -140,7 +156,7 @@ class OverhaulDetector:
                         # Removing the key from the json so we don't process it again
                         queue["entries"].pop(key)
                         queue["lastUpdated"] = self.datetime_to_github_format(datetimeObject=datetime.utcnow())
-                        self.write_json_to_file(dict=queue, filename="./queue.json")
+                        self.write_json_to_file(dict=queue, filename="queue.json")
 
 
     def add_to_queue(self, queue, url, commitResponse, file):
@@ -153,13 +169,13 @@ class OverhaulDetector:
         if len(queue["entries"].keys()) == 0:
 
             # Updating the queue with a new entry
-            queue["entries"].update({"0": {"url": url, "filename": f"/herupa/{file['filename']}", "date": f'{commitResponse["commit"]["author"]["date"]}'}})
+            queue["entries"].update({"0": {"url": url, "filename": f"./Herupa/{file['filename']}", "date": f'{commitResponse["commit"]["author"]["date"]}'}})
             
             # Writing down when the queue was last updated
             queue["lastUpdated"] = self.datetime_to_github_format(datetimeObject=datetime.utcnow())
             
             # Actually writing the queue back to the queue file
-            self.write_json_to_file(dict=queue, filename="./queue.json")
+            self.write_json_to_file(dict=queue, filename="queue.json")
         else:
             
             # Grabbing the last key in the queue and casting it to an int
@@ -169,38 +185,13 @@ class OverhaulDetector:
             newKey = str(lastKey + 1)
 
             # Updating the queue with a new entry
-            queue["entries"].update({newKey: {"url": url, "localPath": f"/herupa/{file['filename']}", "filename": f"{file['filename']}", "date": f'{commitResponse["commit"]["author"]["date"]}'}})
+            queue["entries"].update({newKey: {"url": url, "localPath": f"./Herupa/{file['filename']}", "filename": f"{file['filename']}", "date": f'{commitResponse["commit"]["author"]["date"]}'}})
 
             # Writing down when the queue was last updated
             queue["lastUpdated"] = self.datetime_to_github_format(datetimeObject=datetime.utcnow())
             
             # Actually writing the queue back to the queue file
-            self.write_json_to_file(dict=queue, filename="./queue.json")
-
-    def updateLog(self, files):
-
-        # Formatting the list of files names so we can put them in a message
-        listFiles = ''.join([file["filename"] + "\n" for file in files])
-
-        # Creating the webhook object
-        webhook = DiscordWebhook(url=self.updateLogWebhook)
-
-        # Getting the current time so that info can be added to the update message
-        currentTime = datetime.now()
-
-        # Adding the information to the webhook
-        embed = DiscordEmbed(title=f"Updated Detected on {currentTime.month}-{currentTime.day}-{currentTime.year} at {currentTime.hour}:{currentTime.minute}", description=listFiles, color='ffb7c5')
-        
-        # Setting a disclaimer
-        embed.set_footer(text='Updates are applied ~5 minutes after they are detected.')
-
-        # Adding our embed object to the payload that we are going to sen 
-        webhook.add_embed(embed)
-
-        # Actually sending our payload to our webhook
-        webhook.execute()
-
-        return
+            self.write_json_to_file(dict=queue, filename="queue.json")
 
 
     def main(self, behavior):
@@ -209,7 +200,7 @@ class OverhaulDetector:
 
         if behavior == "standard":
 
-            logging.info("Standard behavior has been specified.")
+            logging.warning("Standard behavior has been specified.")
 
             # Creating queue if it doesn't exist
             self.ensure_queue_exists()
@@ -218,7 +209,7 @@ class OverhaulDetector:
             self.process_queue()
 
             # Creating headers to authentication
-            headers = {"Accept": "application/vnd.github.v3+json", "Authorization": f"token {self.githubPAT}"}
+            headers = {"Authorization": f"token {self.githubPAT}"}
 
             # Getting the latest SHA using Github trees
             shaURL = f"https://api.github.com/repos/{self.githubUsername}/{self.repoName}/git/trees/main?recursive=1"
@@ -229,10 +220,6 @@ class OverhaulDetector:
             commitURL = f"https://api.github.com/repos/{self.githubUsername}/{self.repoName}/commits/{latestSHA}"
             commitResponse = requests.get(commitURL, headers=headers).json()
             timeSinceLastCommit = self.time_since_last_commit(commitResponse["commit"]["author"]["date"])
-            
-            webhook = DiscordWebhook(url=self.updateLogWebhook, content=f'timeSinceLastCommit is {timeSinceLastCommit}\nCommit date is {commitResponse["commit"]["author"]["date"]}\nCurrent UTC time is {datetime.utcnow()}')
-            webhook.execute()
-            
 
             # If the last commit just occured
             if timeSinceLastCommit <= 0:
@@ -250,15 +237,12 @@ class OverhaulDetector:
                         # Grabbing if the file was updated, added, or deleted.
                         status = file["status"].lower()
 
-                        #print(file["status"].lower())
-
                         # if the file was removed from the repository
                         if "removed" in status:
 
                             logging.info("Deleting cog file locally!")
 
                             # delete the file locally
-                            #print("File exists locally? -> ", os.path.exists(f"./Herupa/{file['filename']}"))
                             os.remove(f"./Herupa/{file['filename']}")
 
                         # if the file was updated or added to the repository
@@ -267,7 +251,7 @@ class OverhaulDetector:
                             logging.info("Detected that the cog file was either added or modified! Continuing. . .")
 
                             # Opening up out queue file to read and write to
-                            with open("./queue.json", "r+") as queueFile:
+                            with open("queue.json", "r+") as queueFile:
                                 
                                 # Actually loading the queue data into memory
                                 queue = json.load(queueFile)
@@ -278,9 +262,6 @@ class OverhaulDetector:
                                 # Adding a process to the queue
                                 logging.info("Added the file to be processed by the queue.")
                                 self.add_to_queue(queue, url, commitResponse, file)
-
-                # Sending an update notification to the discord server
-                self.updateLog(commitResponse["files"])
 
 if __name__ == "__main__":
 
