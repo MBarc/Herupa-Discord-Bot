@@ -6,7 +6,6 @@ Note: This program is designed to be executed, via Crontab, once every minute.
 """
 
 from datetime import datetime
-from fileinput import filename
 import requests
 import json
 import os
