@@ -10,14 +10,14 @@ class Temp(commands.Cog):
 
     @commands.command()
     async def temp(self, ctx):
+
+        await ctx.message.channel.send("testing 1...2...3!")
         
         if ctx.message.author != ctx.message.guild.owner:
-            await ctx.message.send("Only the server owner can run this command!")
+            await ctx.message.channel.send("Only the server owner can run this command!")
             return
 
         #target = await ctx.message.channel.fetch_message(727219710428708947)
-
-        await ctx.message.send("testing!")
         
         #await target.add_reaction('0️⃣')
         #await target.add_reaction('1️⃣')
