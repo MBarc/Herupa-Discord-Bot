@@ -11,7 +11,7 @@ class Temp(commands.Cog):
     @commands.command()
     async def temp(self, ctx):
 
-        await ctx.message.channel.send("testing 1...2...3!")
+        await ctx.message.channel.send("still working!")
         
         if ctx.message.author != ctx.message.guild.owner:
             await ctx.message.channel.send("Only the server owner can run this command!")
