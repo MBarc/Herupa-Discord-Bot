@@ -8,6 +8,7 @@ sys.path.insert(0, configPath)
 from config import configFile
 from discord.ext import commands
 
+# Importing libraries only used in this command
 import shlex
 import discord
 
