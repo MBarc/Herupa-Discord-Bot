@@ -10,12 +10,12 @@ class Temp(commands.Cog):
 
     @commands.command()
     async def temp(self, ctx):
-
-        await ctx.message.channel.send("still working!")
         
         if ctx.message.author != ctx.message.guild.owner:
             await ctx.message.channel.send("Only the server owner can run this command!")
             return
+        
+        await ctx.message.channel.send("This command updated automatically!")
 
         #target = await ctx.message.channel.fetch_message(727219710428708947)
         
