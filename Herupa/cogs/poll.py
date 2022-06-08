@@ -78,6 +78,8 @@ class Poll(commands.Cog):
 
         for i in range(len(choices)):
             await message.add_reaction(self.emojiLetters[i])
+            
+        await ctx.message.delete()
 
 
     @poll.error
