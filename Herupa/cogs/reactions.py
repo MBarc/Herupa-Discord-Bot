@@ -82,7 +82,7 @@ class Reactions(commands.Cog):
             # Newsletters
 
             if str(emoji) == "🎥":
-                movieNightRole = get(member.guild.roles, name='movie night')
+                movieNightRole = get(member.guild.roles, name='movie theater')
                 await member.add_roles(movieNightRole)
 
             if str(emoji) == "🕹":
@@ -159,7 +159,7 @@ class Reactions(commands.Cog):
             # Newsletters
 
             if str(emoji) == "🎥":
-                movieNightRole = get(member.guild.roles, name='movie night')
+                movieNightRole = get(member.guild.roles, name='movie theater')
                 await member.remove_roles(movieNightRole)
 
             if str(emoji) == "🕹":
