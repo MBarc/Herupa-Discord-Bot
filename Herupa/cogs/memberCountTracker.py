@@ -20,9 +20,8 @@ class MemberCountTracker(commands.Cog):
     async def membercounttracker(self):
 
         # Declaring the IDs that we're going to need
-        #chillClubID = int(645847490020638720)
-        chillClubID = 985591104370008064
-        trackerChannelID = 995875267220353134
+        chillClubID = 645847490020638720
+        trackerChannelID = 995649638080184421
         
         # Using the IDs to define the server and channel
         guild = self.client.get_guild(chillClubID)
