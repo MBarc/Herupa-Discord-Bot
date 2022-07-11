@@ -78,6 +78,16 @@ class Reactions(commands.Cog):
             if str(emoji) == "💛":
                 amongUsRole = get(member.guild.roles, name='other')
                 await member.add_roles(amongUsRole)
+                
+            # Newsletters
+
+            if str(emoji) == "🎥":
+                movieNightRole = get(member.guild.roles, name='movie night')
+                await member.add_roles(movieNightRole)
+
+            if str(emoji) == "🕹":
+                gameNightRole = get(member.guild.roles, name='game night')
+                await member.add_roles(gameNightRole)
 
             # Age
 
@@ -145,6 +155,16 @@ class Reactions(commands.Cog):
             if str(emoji) == "💛":
                 amongUsRole = get(member.guild.roles, name='other')
                 await member.remove_roles(amongUsRole)
+                
+            # Newsletters
+
+            if str(emoji) == "🎥":
+                movieNightRole = get(member.guild.roles, name='movie night')
+                await member.remove_roles(movieNightRole)
+
+            if str(emoji) == "🕹":
+                gameNightRole = get(member.guild.roles, name='game night')
+                await member.remove_roles(gameNightRole)
 
             # Age
 
