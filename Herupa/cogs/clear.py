@@ -10,8 +10,6 @@ from config import configFile
 import random
 from discord.ext import commands
 
-# testing testing testing
-
 class Clear(commands.Cog):
 
     def __init__(self, client):
@@ -47,7 +45,7 @@ class Clear(commands.Cog):
             if e.code == 50013:  # Missing permissions error Code
                 await ctx.channel.send(random.choice(herupaPermissionError))
             else:
-                await ctx.channel.send("Please report this error as an issue on the Herupa Github page: ", str(e))
+                await ctx.channel.send(f"Please report this error as an issue on the Herupa Github page: {str(e)}")
 
     @clear.error
     async def clear_error(self, ctx, error):
