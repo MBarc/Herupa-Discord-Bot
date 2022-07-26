@@ -14,9 +14,11 @@ class Temp(commands.Cog):
         if ctx.message.author != ctx.message.guild.owner:
             await ctx.message.channel.send("Only the server owner can run this command!")
             return
+        
+        await ctx.message.channel.send("/bump")
        
 
-        target = await ctx.message.channel.fetch_message(727219710428708947)
+        #target = await ctx.message.channel.fetch_message(727219710428708947)
         
         #await target.add_reaction('0️⃣')
         #await target.add_reaction('1️⃣')
@@ -36,8 +38,8 @@ class Temp(commands.Cog):
         #await target.add_reaction('💜') # purple heart
         #await target.add_reaction('💛') # yellow heart
 
-        await target.add_reaction('🕹') # game night
-        await target.add_reaction('🎥') # movie theater
+        #await target.add_reaction('🕹') # game night
+        #await target.add_reaction('🎥') # movie theater
         
         #await target.add_reaction('👨‍🦳') # yellow heart
 
