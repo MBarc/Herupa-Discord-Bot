@@ -3,8 +3,8 @@
 Herupa is the backbone of the Chill Club Discord server. She is completely open source so feel free to make contributions to her code. Via Overhaul.py, any changes made to this Github repo will automatically get pushed to the live instance of Herupa.
 
 ### Commands
-'avatarpic {@member}': 'Herupa will respond with the avatar pic of the member mentioned.' \n
-'clear {number}': 'Delete messages in bulk. If no number is specified, 5 messages are cleared.'
+'avatarpic {@member}': 'Herupa will respond with the avatar pic of the member mentioned.'\
+'clear {number}': 'Delete messages in bulk. If no number is specified, 5 messages are cleared.'\
 'flip {heads or tails}': 'Have Herupa flip a coin. Specifying heads or tails is optional.'
 'herupa {name}': 'Herupa will join the voice channel and say the name specified.'
 'leave': 'Tell Herupa to leave the voice channel.'
