@@ -15,13 +15,13 @@ rps: Play rock, paper, scissors against Herupa.\
 github: Responds with a link to Herupa's Github page\
 isslocation: Get the coordinates and map of where the International Space Station currently is.\
 whoisinspace: Get the amount and names of astronauts currently in space.\
-issprediction {country, region, city}': Get the amount and names of astronauts currently in space.\
+issprediction {country, region, city}: Get the amount and names of astronauts currently in space.\
 addfavorite: Add member to your favorites. They must add you back in order to receive notifications of when each other joins a voice channel.\
 removefavorite: Remove member from your favorites. They will no longer receive notifications of when you join a voice channel.\
 myfavorites: See your list of favorites. This command works in either a public text channel or Herupa's DMs\
 createroom {@members}: Create a private voice chat with the members specified. Specifying members is optional.\
 add2room {@members}: Add members to private voice chat after the room has been created.\
-kanye: Get a random Kanye West quote.'\
+kanye: Get a random Kanye West quote.\
 
 ### Background Tasks
 AFK: Herupa automatically keeps track of how long members are AFK and moves them to the appropriate AFK voice channels.\
