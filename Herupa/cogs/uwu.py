@@ -73,5 +73,5 @@ class UWU(commands.Cog):
         await herupaErrorLogChannel.send(f"{commandName.upper()} error: {error}")
 
 
-def setup(client):
-    client.add_cog(UWU(client))
+async def setup(client):
+    await client.add_cog(UWU(client))
