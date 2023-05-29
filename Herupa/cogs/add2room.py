@@ -85,5 +85,5 @@ class Add2Room(commands.Cog):
         herupaErrorLogChannel = self.client.get_channel(configFile()["herupaErrorLogChannel"])
         await herupaErrorLogChannel.send(f"{commandName.upper()} error: {error}")
 
-def setup(client):
-    client.add_cog(Add2Room(client))
+async def setup(client):
+    await client.add_cog(Add2Room(client))
