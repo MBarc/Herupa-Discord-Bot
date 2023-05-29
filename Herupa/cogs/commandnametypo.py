@@ -63,5 +63,5 @@ class OnCommandError(commands.Cog):
 
         await self.client.process_commands(message)  # processing commands with the new, updated message
 
-def setup(client):
-    client.add_cog(OnCommandError(client))
+async def setup(client):
+    await client.add_cog(OnCommandError(client))
