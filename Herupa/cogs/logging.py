@@ -102,5 +102,5 @@ class Logging(commands.Cog):
         # Sending the update
         await messageDeleteChannel.send(f"**{deleter}** deleted a message by **{messageAuthor}** that was sent in **{messageChannel}** at **{datetime.datetime.now()}**. The content of the message was the following: {messageContent}")
 
-def setup(client):
-    client.add_cog(Logging(client))
+async def setup(client):
+    await client.add_cog(Logging(client))
