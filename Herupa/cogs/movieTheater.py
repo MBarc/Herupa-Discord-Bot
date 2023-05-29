@@ -342,5 +342,5 @@ class MovieTheater(commands.Cog):
         await self.client.wait_until_ready()
 
 
-def setup(client):
-    client.add_cog(MovieTheater(client))
+async def setup(client):
+    await client.add_cog(MovieTheater(client))
