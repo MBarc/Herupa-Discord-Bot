@@ -80,5 +80,5 @@ class OnMemberJoin(commands.Cog):
             documentationChat = self.client.get_channel(configFile()["onmemberjoin"]["documentation"])
             await documentationChat.sent(f"{member.mention} has JOINED the server! The date is {currentMonth}/{currentDay}/{currentYear}.")
 
-def setup(client):
-    client.add_cog(OnMemberJoin(client))
+async def setup(client):
+    await client.add_cog(OnMemberJoin(client))
