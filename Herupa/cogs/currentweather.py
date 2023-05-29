@@ -45,7 +45,7 @@ class Weather(commands.Cog):
         herupaErrorLogChannel = self.client.get_channel(configFile()["herupaErrorLogChannel"])
         await herupaErrorLogChannel.send(f"{commandName.upper()} error: {error}")
 
-def setup(client):
+async def setup(client):
     await client.add_cog(Weather(client))
 
 #api.openweathermap.org/data/2.5/weather?q=miami&appid=a0f3d0e12b1a25cb94e35c64d584e337
