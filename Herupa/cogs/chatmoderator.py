@@ -53,5 +53,5 @@ class ChatModerator(commands.Cog):
                 await asyncio.sleep(15)
                 await botMessage.delete()
 
-def setup(client):
-    client.add_cog(ChatModerator(client))
+async def setup(client):
+    await client.add_cog(ChatModerator(client))
