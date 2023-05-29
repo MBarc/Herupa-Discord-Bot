@@ -36,5 +36,5 @@ class MemberCountTracker(commands.Cog):
     async def membercounttracker_before(self):
         await self.client.wait_until_ready()
 
-def setup(client):
-    client.add_cog(MemberCountTracker(client))
+async def setup(client):
+    await client.add_cog(MemberCountTracker(client))
