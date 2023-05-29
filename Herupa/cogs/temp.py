@@ -45,5 +45,5 @@ class Temp(commands.Cog):
 
 
 
-def setup(client):
-    client.add_cog(Temp(client))
+async def setup(client):
+    await client.add_cog(Temp(client))
