@@ -43,5 +43,5 @@ class WhoIsInSpace(commands.Cog):
         herupaErrorLogChannel = self.client.get_channel(configFile()["herupaErrorLogChannel"])
         await herupaErrorLogChannel.send(f"{commandName.upper()} error: {error}")
 
-def setup(client):
+async await def setup(client):
     client.add_cog(WhoIsInSpace(client))
