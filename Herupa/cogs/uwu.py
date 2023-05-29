@@ -45,6 +45,8 @@ class UWU(commands.Cog):
 
         # Preparing the path that where we'll store the mp3 file
         audio_file = str(Path.cwd() / "audio_repo/uwu.mp3")
+        
+        print(audio_file)
 
         # Loading up opus so we can play audio over the internet
         opuslib = ctypes.util.find_library("opus")
