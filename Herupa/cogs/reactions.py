@@ -172,5 +172,5 @@ class Reactions(commands.Cog):
                 ofAgeRole = get(member.guild.roles, name='18+')
                 await member.remove_roles(ofAgeRole)
 
-def setup(client):
-    client.add_cog(Reactions(client))
+async def setup(client):
+    await client.add_cog(Reactions(client))
