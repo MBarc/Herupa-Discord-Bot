@@ -2,7 +2,6 @@ import asyncio
 from discord.ext import commands
 import os
 import discord
-from discord import app_commands
 
 from cogwatch import watch
 
