@@ -6,7 +6,7 @@ class HerupaMongo:
     def __init__(self):
         self.username = "admin" # change this to get from config or env variable
         self.password = "admin" # change this to get from config or env variable
-        self.connection_string = f"mongodb://{self.username}:{self.password}@localhost:27017/"
+        self.connection_string = f"mongodb://{self.username}:{self.password}@mongo:27017/"
 
     def doesCollectionExist(self, database_name: str, collection_name: str):
 
