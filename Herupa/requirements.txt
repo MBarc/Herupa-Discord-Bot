@@ -1,0 +1,13 @@
+discord.py
+PyYAML
+requests
+validators
+lxml
+qrcode
+better-profanity
+beautifulsoup4
+geopy
+PyNaCl
+cogwatch
+discord-webhook
+pymongo
