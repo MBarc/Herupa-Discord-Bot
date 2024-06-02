@@ -8,7 +8,7 @@ class Lenny(commands.Cog):
     @commands.command(name="lenny",
                       aliases=["l"])
     async def lenny(self, ctx):
-        await ctx.message.channel.send('( ͡° ͜ʖ ͡°)')
+        await ctx.message.channel.send('( ͡° ͜ʖ ͡°)!!!!!!')
 
 async def setup(client):
     await client.add_cog(Lenny(client))
