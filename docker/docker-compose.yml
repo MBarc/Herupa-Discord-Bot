@@ -13,7 +13,7 @@ services:
     container_name: herupa
     restart: unless-stopped
   depends_on:
-    - herupa_mongo
+      herupa_mongo:
 
   herupa_mongo:
     image: mongo
