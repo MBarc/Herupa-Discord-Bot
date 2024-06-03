@@ -53,20 +53,23 @@ class CreateReactMessage(commands.Cog):
                 "\N{REGIONAL INDICATOR SYMBOL LETTER Z}"
             ]
 
-    def get_title_and_choices(self, message):
+    def get_title_and_choices(self, message, ctx):
         """
         Returns the title (as a string) and the choices (as a list) for the given poll/message
         """
 
-        parts = message.split('"')[1:]
+        parts = message.split(' ')[1:]
         title = parts[0]
         choices = [part.strip() for part in parts[1:] if part.strip()]
 
-        print(choices)
+        # Going through every choice to validate that it's a role in the server
+        for choice in choices:
+            choice = int(choice[3:-1])
+            role = discord.utils.get(ctx.guild.roles, id=choice)
 
-        # If not all the choices are of type discord.Role
-        if not all(isinstance(choice, discord.Role) for choice in choices):
-            raise TypeError("Not all the choices are of type discord.Role!")
+            # If one of the choices is not a role
+            if not role:
+                raise Exception("Not all the choices are a role in the server!")
 
         return title, choices
 
@@ -76,10 +79,7 @@ class CreateReactMessage(commands.Cog):
                       aliases=["crm"])
     async def CreateReactMessage(self, ctx):
 
-        print(ctx.message)
-        print(ctx.message.content)
-
-        title, choices = self.get_title_and_choices(ctx.message.content)
+        title, choices = self.get_title_and_choices(ctx.message.content, ctx)
 
         if not choices:
             await ctx.send('Incorrect format! Your message should be like this -> "Prompt" "Role 1" "Roll 2" "Roll 3"')
@@ -90,13 +90,13 @@ class CreateReactMessage(commands.Cog):
 
         embed = discord.Embed(title=title, colour=discord.Colour.from_rgb(255, 183, 197))
 
-        # Creating a collection for the react message 
-        self.mongo_instance.createCollection(database_name=f"{ctx.message.guild.id}_react_messages", collection_name=ctx.message.id)
+        # Declaring our database and collection
+        database_name = f"{ctx.message.guild.id}_react_messages"
 
         # Adding the choices to the message and adding them as documents to the collection
         for i, choice in enumerate(choices):
-            embed.add_field(name=self.emojiLetters[i], value=choice.name, inline=False)
-            self.mongo_instance.addCollectionEntry(database_name=f"{ctx.message.guild.id}_react_messages", collection_name=ctx.message.id, payload={self.emojiLetters[i], choice.name})
+            role = discord.utils.get(ctx.guild.roles, id=int(choice[3:-1]))
+            embed.add_field(name=self.emojiLetters[i], value=role.name, inline=False)
 
         # Sending the react message
         message = await ctx.send(embed=embed)
@@ -105,10 +105,63 @@ class CreateReactMessage(commands.Cog):
         for emoji in self.emojiLetters[:len(choices)]:
             await message.add_reaction(emoji)
 
+        # Adding the choices as documents to the collection ; this must be done after message object is created for collection_name
+        for i, choice in enumerate(choices):
+            role = discord.utils.get(ctx.guild.roles, id=int(choice[3:-1]))
+
+            payload = {}
+            payload[self.emojiLetters[i]] = role.name
+            self.mongo_instance.addCollectionEntry(database_name=database_name, collection_name=str(message.id), payload=payload)
+
         # Cleaning up messages
         await ctx.message.delete()
 
 
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, ctx):
+
+        guildID = ctx.guild_id
+        guild = self.client.get_guild(guildID)
+
+        messageID = str(ctx.message_id)
+
+        reaction = ctx.emoji
+
+        database_name = f"{guildID}_react_messages"
+
+        # if messageID is the name of a collection in our database
+        if self.mongo_instance.doesCollectionExist(database_name=database_name, collection_name=messageID):
+
+            document = self.mongo_instance.findSpecificDocumentsByKey(database_name=database_name, collection_name=messageID, key=reaction.name)
+
+            role = discord.utils.get(guild.roles, name=document[0].get(reaction.name))
+
+            await ctx.member.add_roles(role)
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, ctx):
+        
+        # Declaring the variables we'll need
+        guildID = ctx.guild_id
+        guild = self.client.get_guild(guildID)
+        messageID = str(ctx.message_id)
+        reaction = ctx.emoji
+        database_name = f"{guildID}_react_messages"
+
+        # if messageID is the name of a collection in our database
+        if self.mongo_instance.doesCollectionExist(database_name=database_name, collection_name=messageID):
+
+            # Finding the specific document 
+            document = self.mongo_instance.findSpecificDocumentsByKey(database_name=database_name, collection_name=messageID, key=reaction.name)
+
+            # Getting the corresponding role
+            role = discord.utils.get(guild.roles, name=document[0].get(reaction.name))
+
+            # Getting the member that we need to remove the role from
+            member = guild.get_member(ctx.user_id)
+
+            # Actually removing the roles
+            await member.remove_roles(role)
 
 
 async def setup(client):
