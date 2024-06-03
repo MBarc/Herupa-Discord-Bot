@@ -13,13 +13,11 @@ services:
     container_name: herupa
     restart: unless-stopped
   depends_on:
-    - mongo
+    - herupa_mongo
 
-  mongo:
+  herupa_mongo:
     image: mongo
     restart: always
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: admin
-    ports:
-      - 27017:27017
