@@ -12,9 +12,6 @@ services:
       WEBHOOK_URL: ${WEBHOOK_URL}
     container_name: herupa
     restart: unless-stopped
-  depends_on:
-      herupa_mongo:
-        condition: service_healthy
 
   herupa_mongo:
     image: mongo
