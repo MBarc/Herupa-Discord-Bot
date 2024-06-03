@@ -62,6 +62,8 @@ class CreateReactMessage(commands.Cog):
         title = parts[0]
         choices = [part.strip() for part in parts[1:] if part.strip()]
 
+        print(choices)
+
         # If not all the choices are of type discord.Role
         if not all(isinstance(choice, discord.Role) for choice in choices):
             raise TypeError("Not all the choices are of type discord.Role!")
@@ -73,6 +75,9 @@ class CreateReactMessage(commands.Cog):
                       brief="Creates a react message.",
                       aliases=["crm"])
     async def CreateReactMessage(self, ctx):
+
+        print(ctx.message)
+        print(ctx.message.content)
 
         title, choices = self.get_title_and_choices(ctx.message.content)
 
