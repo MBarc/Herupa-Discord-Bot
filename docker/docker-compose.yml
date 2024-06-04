@@ -1,21 +1,26 @@
-version: '3.1'
-
 services:
 
   herupa:
     build:
       context: .
-      dockerfile: HerupaDockerfile
+      dockerfile: dockerfile
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN}
       GITHUB_PAT: ${GITHUB_PAT}
       WEBHOOK_URL: ${WEBHOOK_URL}
     container_name: herupa
-    restart: unless-stopped
+    entrypoint: /herupa/Herupa/start.sh
+    stdin_open: true
+    tty: true
+    restart: always
+    depends_on:
+      - herupa_mongo
 
   herupa_mongo:
-    image: mongo
+    image: mongo:4.4.18
     restart: always
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: admin
+      MONGO_INITDB_ROOT_USERNAME: admin # change this if you want
+      MONGO_INITDB_ROOT_PASSWORD: admin # change this if you want
+    ports:
+      - 27017:27017
