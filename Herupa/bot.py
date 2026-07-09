@@ -8,9 +8,8 @@ from cogwatch import watch
 class Herupa(commands.Bot):
     def __init__(self):
 
+        # Intents.all() already enables every intent, including members and presences.
         intents = discord.Intents.all()
-        intents.members = True
-        intents.presences = True
 
         super().__init__(command_prefix='$', intents=intents, help_command=None)
 
@@ -22,9 +21,11 @@ class Herupa(commands.Bot):
         print('Herupa is ready to go!')
 
 async def main():
+    token = os.environ.get("DISCORD_TOKEN")
+    if not token:
+        raise RuntimeError("DISCORD_TOKEN is not set in the environment.")
     client = Herupa()
-    print(os.environ.get("DISCORD_TOKEN"))
-    await client.start(os.environ.get("DISCORD_TOKEN"))
+    await client.start(token)
 
 if __name__ == '__main__':
     asyncio.run(main())

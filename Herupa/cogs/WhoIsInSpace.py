@@ -1,6 +1,5 @@
 # Importing libraries specifically used for this command
-import requests
-import json
+import aiohttp
 from discord.ext import commands
 
 class WhoIsInSpace(commands.Cog):
@@ -12,8 +11,10 @@ class WhoIsInSpace(commands.Cog):
                       aliases=["wiis"])
     async def whoisinspace(self, ctx):
         issURL = 'http://api.open-notify.org/astros.json'
-        issAPI = requests.get(issURL)
-        jsonData = json.loads(issAPI.text)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(issURL) as issAPI:
+                # content_type=None: open-notify doesn't always send an application/json header
+                jsonData = await issAPI.json(content_type=None)
 
         amount = jsonData['number']
         people = [person['name'] for person in jsonData['people']]

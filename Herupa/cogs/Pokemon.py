@@ -6,8 +6,7 @@ Purpose: Return a picture of the pokemon specified
 from discord.ext import commands
 
 # Importing libraries specifically used for this command
-import requests
-import json
+import aiohttp
 
 class Pokemon(commands.Cog):
 
@@ -26,17 +25,17 @@ class Pokemon(commands.Cog):
 
         url = f"https://pokeapi.co/api/v2/pokemon/{pokemon}"
 
-        r = requests.get(url)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as r:
 
-        # If the json doesn't return anything
-        if r.status_code == 404:
-            raise Exception("pokemon does not exist")
+                # If the json doesn't return anything
+                if r.status == 404:
+                    raise Exception("pokemon does not exist")
+
+                data = await r.json()
 
         # Where the picture url is located within the json response
-        jsonLocation = json.dumps(r.json()["sprites"]["front_default"])
-
-        # Getting rid of the quotes; reformatting
-        picture = jsonLocation[1:len(jsonLocation)-1]
+        picture = data["sprites"]["front_default"]
 
         # Actually sending the link to the channel ; (Discord will convert the link to a picture automatically)
         await ctx.channel.send(picture)

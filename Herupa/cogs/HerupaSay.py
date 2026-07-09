@@ -3,7 +3,7 @@
 # Importing libraries specifically used for this command
 import discord
 import ctypes
-import requests
+import aiohttp
 from better_profanity import profanity
 from discord.utils import get
 from discord.ext import commands
@@ -54,11 +54,12 @@ class HerupaSay(commands.Cog):
         url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ja&q={content}"
 
         # Actually making the request
-        r = requests.get(url)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as r:
+                audio_content = await r.read()
 
         # Preparing the path that where we'll store the mp3 file
         audio_file = str(Path.cwd() / "audio_repo/phrase.mp3")
-        print(audio_file)
 
         # Uncomment this stuff for a linux environment
         # Loading up opus so we can play audio over the internet
@@ -70,7 +71,7 @@ class HerupaSay(commands.Cog):
 
         # Creating the mp3 file
         with open(audio_file, "wb+") as file:
-            file.write(r.content)
+            file.write(audio_content)
 
         # Getting the voice channel that Herupa is currently connected to
         voice = get(self.client.voice_clients, guild=ctx.guild)

@@ -2,7 +2,7 @@
 from discord.ext import commands
 
 # Importing libraries specifically used for this command
-import requests
+import aiohttp
 import random
 
 class Kanye(commands.Cog):
@@ -16,8 +16,9 @@ class Kanye(commands.Cog):
 
         # Getting the quote
         url = "https://api.kanye.rest/"
-        request = requests.get(url)
-        quote = request.json()["quote"]
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as request:
+                quote = (await request.json())["quote"]
 
         signatures = ["Kanye West",
                       "Yeezy",

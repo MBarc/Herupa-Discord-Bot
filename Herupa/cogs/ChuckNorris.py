@@ -3,7 +3,7 @@ Purpose: This command returns a chucknorris joke from
 '''
 
 # Importing libraries specifically used for this command
-import requests
+import aiohttp
 from discord.ext import commands
 
 class ChuckNorris(commands.Cog):
@@ -15,9 +15,11 @@ class ChuckNorris(commands.Cog):
                       aliases=['cn'])
     async def chucknorris(self, ctx, *args):
 
-        r = requests.get("https://api.chucknorris.io/jokes/random")
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://api.chucknorris.io/jokes/random") as r:
+                data = await r.json()
 
-        await ctx.channel.send(r.json()['value'])
+        await ctx.channel.send(data['value'])
 
 async def setup(client):
     await client.add_cog(ChuckNorris(client))
