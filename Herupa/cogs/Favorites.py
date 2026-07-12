@@ -114,10 +114,33 @@ class Favorites(commands.Cog):
 
         else: # If the user doesn't have any favorites specified
 
-            message = "You don't have have favorites! Use **$addfavorite @mention** to add a favorite!"
+            message = "You don't have any favorites! Use **$addfavorite @mention** to add a favorite!"
 
-        # Sending feedback
-        await ctx.channel.send(message)
+        # Favorites are private, so DM the list to the requester rather than
+        # posting it in the channel for everyone to see.
+        try:
+            await ctx.author.send(message)
+        except discord.Forbidden:
+            # The user has DMs from server members turned off. Tell them how to
+            # fix it without leaking the list into the channel.
+            await ctx.channel.send(
+                f"{ctx.author.mention} I couldn't DM you your favorites. "
+                f"Turn on direct messages from server members and try again.")
+            return
+
+        # If this was run in a server, clean up the command message and leave a
+        # brief pointer that reveals nothing about the list itself.
+        if ctx.guild is not None:
+            try:
+                await ctx.message.delete()
+            except discord.HTTPException:
+                pass
+            try:
+                await ctx.channel.send(
+                    f"📬 {ctx.author.mention} I sent your favorites to your DMs.",
+                    delete_after=10)
+            except discord.HTTPException:
+                pass
 
     def _favorite_ids(self, memberID):
         """The set of user IDs (as strings) that memberID has favorited."""
@@ -161,7 +184,7 @@ class Favorites(commands.Cog):
 
             try:
                 await recipient.send(
-                    f"🔔 **{member.display_name}** just joined **{channel.name}** — come hang out!")
+                    f"🔔 **{member.display_name}** just joined **{channel.name}**! Come hang out!")
                 sent += 1
             except discord.HTTPException:
                 pass  # recipient has DMs closed, etc.
