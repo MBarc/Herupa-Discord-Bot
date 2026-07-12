@@ -2,9 +2,11 @@
 Purpose: This file contains the commands a user can use to manage their favorites.
 '''
 from discord.ext import commands
+import discord
 
 import sys
 import os
+import time
 
 from discord.utils import get
 
@@ -24,9 +26,14 @@ class Favorites(commands.Cog):
         self.dbName = "favorites"
         self.mongo_instance = HerupaMongo()
 
+        # Anti-spam: don't re-notify about the same joiner within this window.
+        self.notify_cooldown_seconds = 300  # 5 minutes
+        self._last_notified = {}  # joiner_id -> unix timestamp of last DM sent
+
     @commands.command(name="addFavorite",
                       description="Adds a favorite member from the author's favorites list",
-                      brief="Adds a favorite.")
+                      brief="Adds a favorite.",
+                      aliases=["af"])
     async def addfavorite(self, ctx):
 
         # Getting the author
@@ -51,7 +58,8 @@ class Favorites(commands.Cog):
 
     @commands.command(name="removeFavorite",
                       description="Removes a favorite member from the author's favorites list",
-                      brief="Removes a favorite.")
+                      brief="Removes a favorite.",
+                      aliases=["rf"])
     async def removefavorite(self, ctx):
 
         # Getting the author
@@ -76,7 +84,8 @@ class Favorites(commands.Cog):
 
     @commands.command(name='displayFavorites',
                       description='Returns the full list of favorites for the user who issued the command.',
-                      brief='Displays the users favorites.')
+                      brief='Displays the users favorites.',
+                      aliases=["df"])
     async def displayfavorites(self, ctx):
         """
         Displays the favorites of the user who issued the command.
@@ -109,6 +118,59 @@ class Favorites(commands.Cog):
 
         # Sending feedback
         await ctx.channel.send(message)
+
+    def _favorite_ids(self, memberID):
+        """The set of user IDs (as strings) that memberID has favorited."""
+        return {str(d["id"]) for d in self.mongo_instance.returnCollectionEntries(
+            database_name=self.dbName, collection_name=memberID)}
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        """DM a member's mutual favorites when they CONNECT to a voice channel —
+        but only those who can actually see that channel (so private rooms never
+        ping, or reveal themselves to, someone who can't join)."""
+
+        # Only fire on a fresh connect (ignore mutes, moves, and disconnects).
+        if member.bot or before.channel is not None or after.channel is None:
+            return
+
+        joiner_id = str(member.id)
+
+        # Rate limit: if we already notified about this person recently, skip —
+        # otherwise a rapid leave/rejoin would spam their favorites.
+        now = time.time()
+        if now - self._last_notified.get(joiner_id, 0) < self.notify_cooldown_seconds:
+            return
+
+        channel = after.channel
+        guild = member.guild
+        sent = 0
+
+        for recipient_id in self._favorite_ids(joiner_id):
+            recipient = guild.get_member(int(recipient_id))
+            if recipient is None or recipient.bot:
+                continue
+
+            # (1) Mutual: the recipient must also have the joiner favorited.
+            if joiner_id not in self._favorite_ids(recipient_id):
+                continue
+
+            # (2) The recipient must be able to see the channel the joiner joined.
+            if not channel.permissions_for(recipient).view_channel:
+                continue
+
+            try:
+                await recipient.send(
+                    f"🔔 **{member.display_name}** just joined **{channel.name}** — come hang out!")
+                sent += 1
+            except discord.HTTPException:
+                pass  # recipient has DMs closed, etc.
+
+        # Only start the cooldown once a DM actually went out, so joining a room
+        # nobody could see doesn't suppress a real ping moments later.
+        if sent:
+            self._last_notified[joiner_id] = now
+
 
 async def setup(client):
     await client.add_cog(Favorites(client))

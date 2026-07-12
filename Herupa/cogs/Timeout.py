@@ -7,7 +7,11 @@ class Timeout(commands.Cog):
 
     def __init__(self, client):
         self.client = client
-        self.allowed_roles = ["deputies", "sheriff", "head chill"]
+        # NOTE: the role is "deputy" (singular). The old "deputies" value meant
+        # deputies could never actually use this command.
+        self.allowed_roles = ["deputy", "sheriff", "head chill"]
+        self.unrestricted_roles = ["sheriff", "head chill"]   # no duration cap
+        self.deputy_timeout_cap_minutes = 60
         self.log_channel_name = "👮law-chat👮"
 
     @commands.command(name="timeout", aliases=["to"])
@@ -16,11 +20,18 @@ class Timeout(commands.Cog):
         Timeout a member for a specified duration with a reason.
         """
 
-        print("Within the timeout code!")
-
         # Check if the author has one of the allowed roles
         if not any(role.name.lower() in self.allowed_roles for role in ctx.author.roles):
             await ctx.send("You do not have the required role to use this command.")
+            return
+
+        # Deputies are capped; sheriff / head chill are not.
+        is_unrestricted = any(role.name.lower() in self.unrestricted_roles for role in ctx.author.roles)
+        if not is_unrestricted and duration > self.deputy_timeout_cap_minutes:
+            await ctx.send(
+                f"Deputies can time a member out for at most {self.deputy_timeout_cap_minutes} "
+                "minutes. A Sheriff must apply a longer timeout."
+            )
             return
 
         try:
@@ -34,8 +45,6 @@ class Timeout(commands.Cog):
 
             # Apply the timeout
             await member.timeout(timeout_duration, reason=reason)
-
-            print("made it this far")
 
             # Send a confirmation message
             await ctx.send(f"{member} has been timed out for {duration} minutes. Reason: {reason}", delete_after=10)

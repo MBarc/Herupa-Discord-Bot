@@ -35,12 +35,32 @@ class ErrorHandler(commands.Cog):
         # Getting the channel we're sending the error to
         errorLogChannel = get(ctx.guild.channels, name=self.errorLogChannel)
 
+        # The in-server error-log channel may not exist (e.g. the herupa category
+        # was removed in favour of the dedicated logging server, which CentralLog
+        # already mirrors errors to) — skip rather than crash.
+        if errorLogChannel is None:
+            return
+
         # Actually sending the error log to the error log channel
         await errorLogChannel.send(embed=message)
 
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
+
+        # Intentional blocks (failed checks, e.g. the anonymous-ticket DM lock) are
+        # not errors — stay silent.
+        if isinstance(error, commands.CheckFailure):
+            return
+
+        # Command errors in DMs can't be logged to a guild channel (no ctx.guild).
+        if ctx.guild is None:
+            if not isinstance(error, commands.CommandNotFound):
+                try:
+                    await ctx.send("Sorry, that command didn't work here.")
+                except discord.HTTPException:
+                    pass
+            return
 
         # Sending the error to the error log channel for review if needed
         await self.error_message_formatter(ctx=ctx, title=str(error).upper(), description=ctx.message.content, author=ctx.message.author)

@@ -1,13 +1,18 @@
-# https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ja&q={name}
+# Herupa joins the author's voice channel and speaks their text using Google
+# Translate's TTS voice (Japanese voice on purpose — the "hearmygirlfriendsvoice" gag).
+# Reference: https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ja&q={text}
 
-# Importing libraries specifically used for this command
-import discord
-import ctypes
-import aiohttp
-from better_profanity import profanity
-from discord.utils import get
-from discord.ext import commands
 from pathlib import Path
+from urllib.parse import quote
+
+import aiohttp
+import discord
+from better_profanity import profanity
+from discord.ext import commands
+
+# Google Translate TTS rejects a query longer than ~200 characters.
+MAX_CHARS = 200
+TTS_URL = "https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ja&q={}"
 
 
 class HerupaSay(commands.Cog):
@@ -19,67 +24,82 @@ class HerupaSay(commands.Cog):
                       aliases=['hs', 'hearmygirlfriendsvoice'])
     async def herupasay(self, ctx):
 
-        # Getting the member so we know who to connect to
-        member = ctx.message.author
+        # Everything after the command word is what Herupa should say.
+        parts = ctx.message.content.split(" ", 1)
+        text = parts[1].strip() if len(parts) > 1 else ""
 
-        # If the user didn't put anything for Herupa to say
-        if len(ctx.message.content.split(" ")) <= 1:
+        if not text:
             await ctx.channel.send("Sorry, what was it that you wanted me to say?")
             return
 
-        # If the user put profanity to
-        if profanity.contains_profanity(ctx.message.content):
+        if len(text) > MAX_CHARS:
+            await ctx.channel.send(f"That's a bit long — keep it under {MAX_CHARS} characters.")
+            return
+
+        if profanity.contains_profanity(text):
             await ctx.channel.send("I'm not saying that. . .")
             return
 
-        # Getting the content of the message and making it be URL compatible
-        content = ctx.message.content.split(" ", 1)[1].replace(" ", "%20")
-
-        # Checking to see if the member is in a voice chat
-        if member.voice is None:
+        # The author has to be in a voice channel for Herupa to join them.
+        if ctx.author.voice is None:
             await ctx.channel.send("You need to be in a voice channel to use this command.")
             return
 
-        # Checking to see if Herupa is already connected to voice channel
-        voice = get(self.client.voice_clients, guild=ctx.guild)
+        # Don't interrupt audio that's already playing in this guild.
+        voice = ctx.guild.voice_client
+        if voice and voice.is_playing():
+            await ctx.channel.send("Hang on — I'm still saying the last one.")
+            return
 
-        # Moving/connecting to the user's voice channel
-        if voice and voice.is_connected():
-            await voice.move_to(member.voice.channel)
-        else:
-            await member.voice.channel.connect()
-            await ctx.channel.send("Joined the voice channel!")
+        # Fetch the TTS audio, properly URL-encoding the phrase so characters
+        # like & # + and emoji can't break or inject into the request.
+        url = TTS_URL.format(quote(text, safe=""))
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as r:
+                    if r.status != 200:
+                        await ctx.channel.send("I couldn't reach my voice right now — try again in a moment.")
+                        return
+                    audio_content = await r.read()
+        except aiohttp.ClientError:
+            await ctx.channel.send("I couldn't reach my voice right now — try again in a moment.")
+            return
 
-        # Preparing the url that we're going to make a request from
-        url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ja&q={content}"
+        # Write to a per-message file so concurrent calls never clash over one path.
+        audio_dir = Path.cwd() / "audio_repo"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        audio_file = audio_dir / f"{ctx.message.id}.mp3"
+        audio_file.write_bytes(audio_content)
 
-        # Actually making the request
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as r:
-                audio_content = await r.read()
+        def cleanup(_error):
+            # Runs on a worker thread once playback finishes (or errors).
+            try:
+                audio_file.unlink(missing_ok=True)
+            except OSError:
+                pass
 
-        # Preparing the path that where we'll store the mp3 file
-        audio_file = str(Path.cwd() / "audio_repo/phrase.mp3")
+        # Connect to — or move into — the author's voice channel.
+        try:
+            if voice and voice.is_connected():
+                if voice.channel != ctx.author.voice.channel:
+                    await voice.move_to(ctx.author.voice.channel)
+            else:
+                voice = await ctx.author.voice.channel.connect()
+                await ctx.channel.send("Joined the voice channel!")
+        except discord.ClientException:
+            cleanup(None)
+            await ctx.channel.send("I'm having trouble joining your voice channel.")
+            return
 
-        # Uncomment this stuff for a linux environment
-        # Loading up opus so we can play audio over the internet
-        #opuslib = ctypes.util.find_library("opus")
-        #print(opuslib)
-        #print("before 1")
-        #print(discord.opus.is_loaded())
-        #discord.opus.load_opus(opuslib)
+        # Play at 90% volume; wrap the source before playing so volume is set atomically.
+        source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(str(audio_file)), volume=0.90)
+        try:
+            voice.play(source, after=cleanup)
+        except discord.ClientException:
+            # Lost the race to another invocation that started playing first.
+            cleanup(None)
+            await ctx.channel.send("Hang on — I'm still saying the last one.")
 
-        # Creating the mp3 file
-        with open(audio_file, "wb+") as file:
-            file.write(audio_content)
-
-        # Getting the voice channel that Herupa is currently connected to
-        voice = get(self.client.voice_clients, guild=ctx.guild)
-
-        # Playing the audio
-        voice.play(discord.FFmpegPCMAudio(audio_file))
-        voice.source = discord.PCMVolumeTransformer(voice.source)
-        voice.source.volume = 0.90
 
 async def setup(client):
     await client.add_cog(HerupaSay(client))

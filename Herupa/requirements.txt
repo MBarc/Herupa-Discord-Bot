@@ -9,6 +9,7 @@ better-profanity
 beautifulsoup4
 geopy
 PyNaCl
+davey
 cogwatch
 discord-webhook
 pymongo

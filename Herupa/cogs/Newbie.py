@@ -12,6 +12,7 @@ class Newbie(commands.Cog):
         self.client = client
         self.newbieRoleName = "newbie"
         self.newbieChannelName = "👶newbie👶"
+        self.chilliesRoleName = "chillies"
         self.botRoleName = "servants"
 
     @commands.Cog.listener()
@@ -68,6 +69,12 @@ class Newbie(commands.Cog):
 
                 # Actually removing the newbie role from the member
                 await ctx.message.author.remove_roles(role_to_remove)
+
+                # Getting the newbie role
+                role_to_add = discord.utils.get(ctx.message.guild.roles, name=self.chilliesRoleName)
+
+                # Actually removing the newbie role from the member
+                await ctx.message.author.add_roles(role_to_add)
 
                 # Sending feedback to the user and saving our feedback to a variable so we can delete it later on
                 acceptanceMessage = await ctx.message.channel.send(f"Welcome to **{ctx.message.guild}**, {ctx.message.author.name}! You should now see all available channels.")

@@ -53,25 +53,41 @@ class CreateReactMessage(commands.Cog):
                 "\N{REGIONAL INDICATOR SYMBOL LETTER Z}"
             ]
 
-    def get_title_and_choices(self, message, ctx):
+    def parse_message_content(self, message_content):
         """
-        Returns the title (as a string) and the choices (as a list) for the given poll/message
+        Parses the message content to extract the title and roles.
+        The format should be: title role1 role2 role3
         """
 
-        parts = message.split(' ')[1:]
-        title = parts[0]
-        choices = [part.strip() for part in parts[1:] if part.strip()]
+        parts = message_content.split()
+        title = []
+        roles = []
 
-        # Going through every choice to validate that it's a role in the server
-        for choice in choices:
-            choice = int(choice[3:-1])
-            role = discord.utils.get(ctx.guild.roles, id=choice)
+        for part in parts[1:]:
+            if part.startswith('<@&') and part.endswith('>'):
+                roles.append(part)
+            else:
+                title.append(part)
 
-            # If one of the choices is not a role
-            if not role:
-                raise Exception("Not all the choices are a role in the server!")
+        title = ' '.join(title)
+        return title, roles
 
-        return title, choices
+    def validate_roles(self, roles, ctx):
+        """
+        Validates that each role mention is a valid role in the server.
+        """
+        validated_roles = []
+        for role_mention in roles:
+            try:
+                role_id = int(role_mention[3:-1])
+                role = discord.utils.get(ctx.guild.roles, id=role_id)
+                if role:
+                    validated_roles.append(role_id)
+                else:
+                    raise ValueError
+            except ValueError:
+                raise commands.BadArgument(f"Invalid role ID: {role_mention}")
+        return validated_roles
 
     @commands.command(name="createreactmessage",
                       description="Creates a message where users can react to receive the corresponding roll.",
@@ -79,13 +95,14 @@ class CreateReactMessage(commands.Cog):
                       aliases=["crm"])
     async def CreateReactMessage(self, ctx):
 
-        title, choices = self.get_title_and_choices(ctx.message.content, ctx)
+        title, choices = self.parse_message_content(ctx.message.content)
+        validated_choices = self.validate_roles(choices, ctx)
 
-        if not choices:
+        if not validated_choices:
             await ctx.send('Incorrect format! Your message should be like this -> "Prompt" "Role 1" "Roll 2" "Roll 3"')
             return
 
-        if len(choices) > 26:
+        if len(validated_choices) > 26:
             raise commands.BadArgument("Too many choices! Only a maximum of 26 choices are allowed.")
 
         embed = discord.Embed(title=title, colour=discord.Colour.from_rgb(255, 183, 197))
