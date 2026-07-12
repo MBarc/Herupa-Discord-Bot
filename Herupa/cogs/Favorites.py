@@ -4,11 +4,17 @@ Purpose: This file contains the commands a user can use to manage their favorite
 from discord.ext import commands
 import discord
 
+import asyncio
 import sys
 import os
 import time
+import traceback
 
 from discord.utils import get
+
+# Chill Club. Slash commands are synced to this guild so they appear instantly
+# (a global sync can take up to an hour to propagate).
+GUILD_ID = 645847490020638720
 
 # Get the parent directory of the current script
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -29,6 +35,25 @@ class Favorites(commands.Cog):
         # Anti-spam: don't re-notify about the same joiner within this window.
         self.notify_cooldown_seconds = 300  # 5 minutes
         self._last_notified = {}  # joiner_id -> unix timestamp of last DM sent
+
+    async def cog_load(self):
+        # Register the slash version of $displayfavorites. Done in a background
+        # task because this bot's on_ready is unreliable, so we poll the guild
+        # cache first (same approach InviteTracker uses to prime its cache).
+        self._sync_task = asyncio.create_task(self._sync_slash_commands())
+
+    async def _sync_slash_commands(self):
+        for _ in range(60):
+            if self.client.guilds:
+                break
+            await asyncio.sleep(2)
+        try:
+            guild = discord.Object(id=GUILD_ID)
+            self.client.tree.copy_global_to(guild=guild)
+            synced = await self.client.tree.sync(guild=guild)
+            print(f"[Favorites] synced {len(synced)} slash command(s) to guild {GUILD_ID}")
+        except Exception:
+            traceback.print_exc()
 
     @commands.command(name="addFavorite",
                       description="Adds a favorite member from the author's favorites list",
@@ -82,13 +107,15 @@ class Favorites(commands.Cog):
         # Sending feedback to the user
         await ctx.channel.send(f"You have successfully removed {ctx.message.mentions[0].name} as a favorite.")
 
-    @commands.command(name='displayFavorites',
-                      description='Returns the full list of favorites for the user who issued the command.',
-                      brief='Displays the users favorites.',
-                      aliases=["df"])
+    @commands.hybrid_command(name='displayfavorites',
+                             description='Privately shows your list of favorites.',
+                             aliases=["df"])
     async def displayfavorites(self, ctx):
         """
-        Displays the favorites of the user who issued the command.
+        Privately shows the favorites of the user who issued the command.
+        As a slash command (/displayfavorites) the reply is ephemeral, so only
+        the caller can see it. As a prefix command ($df) ephemeral isn't
+        possible, so the list is DMed instead.
         """
 
         # Getting the author
@@ -101,7 +128,7 @@ class Favorites(commands.Cog):
         if len(documents) != 0:
 
             # Initialize the message
-            message = "Here are your favorites: \n"
+            message = "Here are your favorites:\n"
 
             # Iterate through the documents and retrieve user names
             for document in documents:
@@ -116,20 +143,22 @@ class Favorites(commands.Cog):
 
             message = "You don't have any favorites! Use **$addfavorite @mention** to add a favorite!"
 
-        # Favorites are private, so DM the list to the requester rather than
-        # posting it in the channel for everyone to see.
+        # Slash command: reply ephemerally, so only the caller sees it in-channel.
+        if ctx.interaction is not None:
+            await ctx.interaction.response.send_message(message, ephemeral=True)
+            return
+
+        # Prefix command: ephemeral replies aren't possible, so DM the list
+        # rather than posting it for everyone to see.
         try:
             await ctx.author.send(message)
         except discord.Forbidden:
-            # The user has DMs from server members turned off. Tell them how to
-            # fix it without leaking the list into the channel.
             await ctx.channel.send(
                 f"{ctx.author.mention} I couldn't DM you your favorites. "
-                f"Turn on direct messages from server members and try again.")
+                f"Turn on direct messages from server members, or use the "
+                f"**/displayfavorites** slash command for a private reply.")
             return
 
-        # If this was run in a server, clean up the command message and leave a
-        # brief pointer that reveals nothing about the list itself.
         if ctx.guild is not None:
             try:
                 await ctx.message.delete()
