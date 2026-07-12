@@ -75,6 +75,8 @@ class Help(commands.Cog):
                     "Ban a member.  **Deputy:** shares the same 3-per-hour pool  •  **Sheriff+:** unlimited.",
                 "$clear {number} · $c": "Bulk-delete messages (default 5).",
                 "$purgatory {@member} · $purg": "Send a member to purgatory.",
+                "$rolepanel [single] {title} {@role...} · $rp":
+                    "Post a self-assign role button panel. 'single' = picking one role swaps out the others.",
             }),
         ]
 
