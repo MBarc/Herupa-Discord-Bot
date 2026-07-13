@@ -40,6 +40,25 @@ class InviteTracker(commands.Cog):
         # guild_id -> {code: {"uses", "inviter_id", "inviter_name"}}
         self.cache = {}
 
+    # ------------------------- invite counter -------------------------
+    # A persistent per-inviter running total, seeded from the old bot's log
+    # history. This is what "who now has N invites" reports. Discord's own
+    # invite `uses` can't be used for this: it resets per invite link, so it
+    # loses the historical total the community is used to seeing.
+
+    def _counts(self):
+        return self.mongo.client[self.db]["counts"]
+
+    def _bump_count(self, inviter_id, delta):
+        """Adjust an inviter's running total and return the new value (min 0)."""
+        col = self._counts()
+        col.update_one({"_id": str(inviter_id)}, {"$inc": {"count": delta}}, upsert=True)
+        n = (col.find_one({"_id": str(inviter_id)}) or {}).get("count", 0)
+        if n < 0:
+            n = 0
+            col.update_one({"_id": str(inviter_id)}, {"$set": {"count": 0}})
+        return n
+
     # ------------------------- snapshot upkeep -------------------------
 
     def _pack(self, invites):
@@ -128,24 +147,66 @@ class InviteTracker(commands.Cog):
             # No baseline yet (fresh start) — can't attribute this one; prime for next time.
             self.cache[guild.id] = self._pack(current)
 
+        # Bump the inviter's persistent running total and show the new value.
+        invite_count = self._bump_count(inviter_id, 1) if inviter_id else None
+
         self.mongo.addCollectionEntry(database_name=self.db, collection_name=self.col, payload={
             "guild_id": str(guild.id), "member_id": str(member.id), "member_name": str(member),
             "inviter_id": inviter_id, "inviter_name": inviter_name, "code": code,
-            "joined_at": int(time.time()),
+            "invite_count": invite_count, "joined_at": int(time.time()),
         })
 
         log = get(guild.text_channels, name=LOG_CHANNEL_NAME)
         if log is not None:
-            if inviter_id:
-                desc = f"📥 {member.mention} joined — invited by <@{inviter_id}>"
+            # Show the joiner by name (as text): a mention of a brand-new member
+            # renders as a raw ID for viewers who don't have them cached yet, and
+            # we suppress pings in the log so the mention isn't resolvable.
+            who = f"**{member.display_name}**"
+            if inviter_id and invite_count is not None:
+                unit = "invite" if invite_count == 1 else "invites"
+                desc = (f"📥 {who} joined, invited by <@{inviter_id}>, "
+                        f"who now has **{invite_count}** {unit}.")
+            elif inviter_id:
+                desc = f"📥 {who} joined, invited by <@{inviter_id}>."
             else:
-                desc = (f"📥 {member.mention} joined — **inviter unknown** "
-                        "(vanity link, another bot, or I was offline at join time)")
+                desc = (f"📥 {who} joined. Inviter unknown "
+                        "(vanity link, another bot, or I was offline at join time).")
             embed = discord.Embed(description=desc, colour=0x2ECC71)
             try:
                 await log.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
             except discord.HTTPException:
                 pass
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member):
+        if member.bot:
+            return
+        guild = member.guild
+
+        # Look up how they joined from the stored records (most recent wins).
+        rec = None
+        for r in self._records():
+            if r.get("guild_id") == str(guild.id) and r.get("member_id") == str(member.id):
+                rec = r
+        inviter_id = rec.get("inviter_id") if rec else None
+
+        # Someone their inviter brought in has left, so drop the inviter's total
+        # by one (mirrors how the old bot's count went down on departures).
+        if inviter_id:
+            self._bump_count(inviter_id, -1)
+
+        log = get(guild.text_channels, name=LOG_CHANNEL_NAME)
+        if log is None:
+            return
+        if inviter_id:
+            desc = f"📤 **{member.display_name}** left the server, they were invited by <@{inviter_id}>."
+        else:
+            desc = f"📤 **{member.display_name}** left the server. I couldn't figure out how they joined."
+        embed = discord.Embed(description=desc, colour=0x888888)
+        try:
+            await log.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException:
+            pass
 
     # ------------------------- lookups -------------------------
 
