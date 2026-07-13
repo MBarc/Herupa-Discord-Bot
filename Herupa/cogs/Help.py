@@ -55,7 +55,7 @@ class Help(commands.Cog):
                 "$migrate {channel id} · $m": "Move everyone in your voice channel to another one.",
                 "$addfavorite {@member} · $af": "Favorite a member and get pinged when they join a VC (must be mutual).",
                 "$removefavorite {@member} · $rf": "Remove a member from your favorites.",
-                "/displayfavorites · $df": "Privately see your favorites. The /slash version replies only to you; $df sends a DM.",
+                "$displayfavorites · $df": "Lists your favorites, then auto-deletes the message after a few seconds.",
             }),
             ("🛠️ Utility", {
                 "$membercount · $mc": "Show the server's member and bot counts.",

@@ -4,17 +4,11 @@ Purpose: This file contains the commands a user can use to manage their favorite
 from discord.ext import commands
 import discord
 
-import asyncio
 import sys
 import os
 import time
-import traceback
 
 from discord.utils import get
-
-# Chill Club. Slash commands are synced to this guild so they appear instantly
-# (a global sync can take up to an hour to propagate).
-GUILD_ID = 645847490020638720
 
 # Get the parent directory of the current script
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -35,25 +29,6 @@ class Favorites(commands.Cog):
         # Anti-spam: don't re-notify about the same joiner within this window.
         self.notify_cooldown_seconds = 300  # 5 minutes
         self._last_notified = {}  # joiner_id -> unix timestamp of last DM sent
-
-    async def cog_load(self):
-        # Register the slash version of $displayfavorites. Done in a background
-        # task because this bot's on_ready is unreliable, so we poll the guild
-        # cache first (same approach InviteTracker uses to prime its cache).
-        self._sync_task = asyncio.create_task(self._sync_slash_commands())
-
-    async def _sync_slash_commands(self):
-        for _ in range(60):
-            if self.client.guilds:
-                break
-            await asyncio.sleep(2)
-        try:
-            guild = discord.Object(id=GUILD_ID)
-            self.client.tree.copy_global_to(guild=guild)
-            synced = await self.client.tree.sync(guild=guild)
-            print(f"[Favorites] synced {len(synced)} slash command(s) to guild {GUILD_ID}")
-        except Exception:
-            traceback.print_exc()
 
     @commands.command(name="addFavorite",
                       description="Adds a favorite member from the author's favorites list",
@@ -107,15 +82,19 @@ class Favorites(commands.Cog):
         # Sending feedback to the user
         await ctx.channel.send(f"You have successfully removed {ctx.message.mentions[0].name} as a favorite.")
 
-    @commands.hybrid_command(name='displayfavorites',
-                             description='Privately shows your list of favorites.',
-                             aliases=["df"])
+    # Seconds the favorites message stays up before Herupa deletes it.
+    DISPLAY_TTL = 10
+
+    @commands.command(name='displayfavorites',
+                      description='Lists your favorites in the channel, then auto-deletes the message after a few seconds.',
+                      brief='Displays your favorites (auto-deletes).',
+                      aliases=["df"])
     async def displayfavorites(self, ctx):
         """
-        Privately shows the favorites of the user who issued the command.
-        As a slash command (/displayfavorites) the reply is ephemeral, so only
-        the caller can see it. As a prefix command ($df) ephemeral isn't
-        possible, so the list is DMed instead.
+        Shows the favorites of the user who issued the command in the channel,
+        then deletes the message after DISPLAY_TTL seconds so it doesn't linger.
+        Note: a $ prefix command can't send a truly private (ephemeral) reply,
+        so this is briefly visible to anyone watching the channel.
         """
 
         # Getting the author
@@ -143,33 +122,14 @@ class Favorites(commands.Cog):
 
             message = "You don't have any favorites! Use **$addfavorite @mention** to add a favorite!"
 
-        # Slash command: reply ephemerally, so only the caller sees it in-channel.
-        if ctx.interaction is not None:
-            await ctx.interaction.response.send_message(message, ephemeral=True)
-            return
-
-        # Prefix command: ephemeral replies aren't possible, so DM the list
-        # rather than posting it for everyone to see.
+        # A $ prefix command can't send an ephemeral reply, so post the list in
+        # the channel and auto-delete it after a short delay. Also remove the
+        # invoking command so nothing lingers once the message expires.
         try:
-            await ctx.author.send(message)
-        except discord.Forbidden:
-            await ctx.channel.send(
-                f"{ctx.author.mention} I couldn't DM you your favorites. "
-                f"Turn on direct messages from server members, or use the "
-                f"**/displayfavorites** slash command for a private reply.")
-            return
-
-        if ctx.guild is not None:
-            try:
-                await ctx.message.delete()
-            except discord.HTTPException:
-                pass
-            try:
-                await ctx.channel.send(
-                    f"📬 {ctx.author.mention} I sent your favorites to your DMs.",
-                    delete_after=10)
-            except discord.HTTPException:
-                pass
+            await ctx.message.delete()
+        except discord.HTTPException:
+            pass
+        await ctx.channel.send(message, delete_after=self.DISPLAY_TTL)
 
     def _favorite_ids(self, memberID):
         """The set of user IDs (as strings) that memberID has favorited."""

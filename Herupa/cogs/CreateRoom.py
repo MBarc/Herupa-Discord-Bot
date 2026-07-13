@@ -7,8 +7,9 @@ Privacy modes:
   - private : only the owner, their favorites, and bypass (mod) roles can join.
 
 $crpm toggles the stored mode AND, if the member currently has a room, applies
-the new mode to it live (re-permissioning, renaming, and — when switching to
-private — disconnecting anyone no longer allowed).
+the new mode to it live (re-permissioning and renaming). Switching to private
+blocks new disallowed members from joining, but never disconnects anyone who is
+already in the room.
 '''
 import discord
 from discord.ext import commands
@@ -99,23 +100,6 @@ class CreateRoom(commands.Cog):
                 return vc
         return None
 
-    async def _evict_disallowed(self, room, owner):
-        """When a room goes private, disconnect anyone who may no longer be in it."""
-        allowed = {owner.id} | set(self._favorite_ids(str(owner.id)))
-        bypass = {r.lower() for r in self.bypassRoles}
-        removed = 0
-        for member in list(room.members):
-            if member.id in allowed or member.bot:
-                continue
-            if any(r.name.lower() in bypass for r in member.roles):
-                continue
-            try:
-                await member.move_to(None)
-                removed += 1
-            except discord.HTTPException:
-                pass
-        return removed
-
     # ----------------------------- command -----------------------------
 
     @commands.command(name='crpm',
@@ -133,22 +117,21 @@ class CreateRoom(commands.Cog):
         room = self._find_owned_room(ctx.guild, ctx.author)
         if room is None:
             await ctx.channel.send(
-                f"Your privacy mode is now **{new_mode.upper()}** — it'll apply to your next room.")
+                f"Your privacy mode is now **{new_mode.upper()}**. It'll apply to your next room.")
             return
 
         try:
             overwrites = self._build_overwrites(ctx.guild, ctx.author, new_mode)
             new_name = f"{new_mode.upper()} - {ctx.author.display_name}"
             # One API call applies both the rename and every permission change.
+            # Going private only blocks NEW joins; anyone already connected stays.
             await room.edit(name=new_name, overwrites=overwrites)
-            removed = await self._evict_disallowed(room, ctx.author) if new_mode == "private" else 0
         except discord.Forbidden:
             await ctx.channel.send(
                 f"Switched you to **{new_mode.upper()}**, but I couldn't update your live room (missing permissions).")
             return
 
-        note = f" Removed {removed} non-favorite(s)." if removed else ""
-        await ctx.channel.send(f"Your room is now **{new_mode.upper()}**.{note}")
+        await ctx.channel.send(f"Your room is now **{new_mode.upper()}**.")
 
     # ----------------------------- listener -----------------------------
 
