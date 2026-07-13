@@ -4,6 +4,8 @@
 # Importing libraries specifically used for this command
 import discord
 import ctypes
+import os
+import random
 import requests
 from better_profanity import profanity
 from discord.utils import get
@@ -39,6 +41,11 @@ class UWU(commands.Cog):
 
         # Preparing the path that where we'll store the mp3 file
         audio_file = str(Path.cwd() / "audio_repo/uwu.mp3")
+
+        # 1 in 100 chance to play the rare "uwu" clip instead of the usual one.
+        rare_file = str(Path.cwd() / "audio_repo/uwu_rare.mp3")
+        if random.randint(1, 100) == 1 and os.path.exists(rare_file):
+            audio_file = rare_file
 
         # Uncomment this section when deploying to a linux environment
         # Loading up opus so we can play audio over the internet
