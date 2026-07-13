@@ -82,19 +82,13 @@ class Favorites(commands.Cog):
         # Sending feedback to the user
         await ctx.channel.send(f"You have successfully removed {ctx.message.mentions[0].name} as a favorite.")
 
-    # Seconds the favorites message stays up before Herupa deletes it.
-    DISPLAY_TTL = 10
-
     @commands.command(name='displayfavorites',
-                      description='Lists your favorites in the channel, then auto-deletes the message after a few seconds.',
-                      brief='Displays your favorites (auto-deletes).',
+                      description='Returns the full list of favorites for the user who issued the command.',
+                      brief='Displays your favorites.',
                       aliases=["df"])
     async def displayfavorites(self, ctx):
         """
-        Shows the favorites of the user who issued the command in the channel,
-        then deletes the message after DISPLAY_TTL seconds so it doesn't linger.
-        Note: a $ prefix command can't send a truly private (ephemeral) reply,
-        so this is briefly visible to anyone watching the channel.
+        Displays the favorites of the user who issued the command.
         """
 
         # Getting the author
@@ -122,14 +116,8 @@ class Favorites(commands.Cog):
 
             message = "You don't have any favorites! Use **$addfavorite @mention** to add a favorite!"
 
-        # A $ prefix command can't send an ephemeral reply, so post the list in
-        # the channel and auto-delete it after a short delay. Also remove the
-        # invoking command so nothing lingers once the message expires.
-        try:
-            await ctx.message.delete()
-        except discord.HTTPException:
-            pass
-        await ctx.channel.send(message, delete_after=self.DISPLAY_TTL)
+        # Sending the list to the channel.
+        await ctx.channel.send(message)
 
     def _favorite_ids(self, memberID):
         """The set of user IDs (as strings) that memberID has favorited."""
