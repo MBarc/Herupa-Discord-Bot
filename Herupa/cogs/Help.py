@@ -75,6 +75,7 @@ class Help(commands.Cog):
                 "$invitedby {@member}": "See who invited a member (defaults to you).",
                 "$invites {@member} · $invited": "See who a member has invited (defaults to you).",
                 "$leaderboard {stat} · $lb": "Top members by voice time, invites, AFK time, or messages (monthly and all-time).",
+                "$rank {@member} · $level": "See your level, XP, and progress to the next level (defaults to you).",
                 "$ping · $p": "Check that Herupa is alive (pong!).",
                 "$help · $h": "Show this help menu.",
             }),
