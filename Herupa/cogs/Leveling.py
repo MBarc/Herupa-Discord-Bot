@@ -29,7 +29,7 @@ from tools.HerupaMongo import HerupaMongo
 DB, COL = "leveling", "members"
 MSG_XP = (15, 25)
 MSG_COOLDOWN = 60          # seconds between XP-earning messages, per member
-VOICE_XP = (5, 10)
+VOICE_XP = 5               # flat XP granted per minute in voice
 VOICE_INTERVAL = 60        # seconds; the voice XP loop runs on this cadence
 PINK = discord.Colour.from_rgb(255, 183, 197)
 
@@ -116,7 +116,7 @@ class Leveling(commands.Cog):
                 for m in humans:
                     if m.voice and m.voice.self_deaf:
                         continue
-                    old, new = self._add_xp(m.id, random.randint(*VOICE_XP))
+                    old, new = self._add_xp(m.id, VOICE_XP)
                     if new > old:
                         await self._announce(vc, m, new)
 
