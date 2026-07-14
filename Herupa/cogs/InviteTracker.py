@@ -16,6 +16,7 @@ import sys
 import os
 import time
 import asyncio
+import datetime
 
 import discord
 from discord.ext import commands
@@ -149,6 +150,13 @@ class InviteTracker(commands.Cog):
 
         # Bump the inviter's persistent running total and show the new value.
         invite_count = self._bump_count(inviter_id, 1) if inviter_id else None
+
+        # Also increment this month's bucket (gross joins; used by the invites
+        # leaderboard's monthly view). Unlike the all-time count, monthly is not
+        # decremented on leaves.
+        if inviter_id:
+            mk = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m")
+            self._counts().update_one({"_id": str(inviter_id)}, {"$inc": {f"months.{mk}": 1}})
 
         self.mongo.addCollectionEntry(database_name=self.db, collection_name=self.col, payload={
             "guild_id": str(guild.id), "member_id": str(member.id), "member_name": str(member),

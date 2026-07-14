@@ -74,6 +74,7 @@ class Help(commands.Cog):
                 "$isslive": "Get a link to the ISS live stream.",
                 "$invitedby {@member}": "See who invited a member (defaults to you).",
                 "$invites {@member} · $invited": "See who a member has invited (defaults to you).",
+                "$leaderboard {stat} · $lb": "Top members by voice time, invites, AFK time, or messages (monthly and all-time).",
                 "$ping · $p": "Check that Herupa is alive (pong!).",
                 "$help · $h": "Show this help menu.",
             }),
@@ -106,7 +107,7 @@ class Help(commands.Cog):
             }))
 
         backgroundTasks = {
-            "AFK": "Herupa tracks how long members are AFK and moves them to the AFK channel.",
+            "Activity Stats": "Tracks voice time, AFK time, and messages sent for the leaderboards (see $lb).",
             "Newbie / ToS": "Assigns the newbie role to arrivals, then chillies once they accept the ToS.",
             "Greeter": "Greets each new member with a unique welcome.",
             "Logging": "Logs deleted messages and voice join/leave/switch events to the log channels.",
