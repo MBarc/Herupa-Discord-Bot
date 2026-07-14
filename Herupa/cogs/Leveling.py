@@ -14,6 +14,7 @@ Amari/MEE6 levels with tools/scripts (see ~/level_migration on the Pi).
 
 import os
 import random
+import re
 import sys
 import time
 
@@ -32,6 +33,35 @@ MSG_COOLDOWN = 60          # seconds between XP-earning messages, per member
 VOICE_XP = 5               # flat XP granted per minute in voice
 VOICE_INTERVAL = 60        # seconds; the voice XP loop runs on this cadence
 PINK = discord.Colour.from_rgb(255, 183, 197)
+
+# The group Wordle bot posts a daily "yesterday's results" summary listing each
+# player's score; we parse it to award a once-a-day XP bonus.
+WORDLE_BOT_ID = 1211781489931452447
+_WORDLE_LINE = re.compile(r"(👑\s*)?([1-6xX])/6:\s*(.+)")
+_MENTION = re.compile(r"<@!?(\d+)>")
+
+
+def wordle_xp(score, crown):
+    """XP for one Wordle result. `score` is '1'..'6' (solved) or 'X' (missed)."""
+    if score.upper() == "X":
+        xp = 20                        # played but didn't solve
+    else:
+        xp = 50 + (6 - int(score)) * 10  # 1/6 = 100 down to 6/6 = 50
+    return xp + (20 if crown else 0)     # daily winner bonus
+
+
+def parse_wordle_results(content):
+    """From a Wordle results message, return [(user_id, xp), ...]."""
+    awards = []
+    for line in content.splitlines():
+        m = _WORDLE_LINE.search(line)
+        if not m:
+            continue
+        crown, score, tail = bool(m.group(1)), m.group(2), m.group(3)
+        xp = wordle_xp(score, crown)
+        for uid in _MENTION.findall(tail):
+            awards.append((uid, xp))
+    return awards
 
 
 # ----- MEE6 level curve --------------------------------------------------------
@@ -92,7 +122,14 @@ class Leveling(commands.Cog):
     # ----- earning: messages -----
     @commands.Cog.listener()
     async def on_message(self, message):
-        if message.author.bot or message.guild is None:
+        if message.guild is None:
+            return
+        # Wordle bot's daily results grant a once-a-day bonus (handled before the
+        # usual bot filter, since the Wordle bot is itself a bot).
+        if message.author.id == WORDLE_BOT_ID:
+            await self._handle_wordle(message)
+            return
+        if message.author.bot:
             return
         now = time.time()
         if now - self._msg_cooldown.get(message.author.id, 0) < MSG_COOLDOWN:
@@ -101,6 +138,16 @@ class Leveling(commands.Cog):
         old, new = self._add_xp(message.author.id, random.randint(*MSG_XP))
         if new > old:
             await self._announce(message.channel, message.author, new)
+
+    async def _handle_wordle(self, message):
+        if "yesterday's results" not in (message.content or "").lower():
+            return
+        for uid, xp in parse_wordle_results(message.content):
+            old, new = self._add_xp(uid, xp)
+            if new > old:
+                member = message.guild.get_member(int(uid))
+                if member:
+                    await self._announce(message.channel, member, new)
 
     # ----- earning: voice -----
     @tasks.loop(seconds=VOICE_INTERVAL)
