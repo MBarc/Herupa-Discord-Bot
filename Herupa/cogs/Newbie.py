@@ -1,5 +1,8 @@
 '''
-Purpose: This command will allow the member to accept our terms of service and make the rest of the server visible to them.
+Purpose: The rules channel doubles as the ToS gate. New members land there
+(and everyone can keep reading the pinned rules), and running "$newbie accept"
+swaps their "newbie" role for "chillies", making the rest of the server visible.
+The channel stays clean: anything that isn't the "$newbie" command is removed.
 '''
 
 import asyncio
@@ -11,14 +14,14 @@ class Newbie(commands.Cog):
     def __init__(self, client):
         self.client = client
         self.newbieRoleName = "newbie"
-        self.newbieChannelName = "👶newbie👶"
+        self.newbieChannelName = "📜rules📜"
         self.chilliesRoleName = "chillies"
         self.botRoleName = "servants"
 
     @commands.Cog.listener()
     async def on_message(self, message):
         
-        # If the user sent the message in the newbie channel        
+        # Keep the rules channel clean: only the "$newbie" command is allowed.
         if (message.channel.name == self.newbieChannelName) and (message.author != self.client.user):
 
             # If the user did not run the newbie command
@@ -28,7 +31,7 @@ class Newbie(commands.Cog):
                 await message.delete()
 
                 # Sending feedback to the user and saving our feedback to a variable so we can delete it later on
-                notificationMessage = await message.channel.send(f"This channel is only for using the \"$newbie\" command. Please read the pinned message fully.")
+                notificationMessage = await message.channel.send(f"📜 This is the rules channel. New here? Read the pinned message and run `$newbie accept` to join in.")
 
                 # Waiting a few seconds before deleting the feedback
                 await asyncio.sleep(10)
