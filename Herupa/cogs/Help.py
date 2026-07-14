@@ -78,6 +78,14 @@ class Help(commands.Cog):
                 "$ping · $p": "Check that Herupa is alive (pong!).",
                 "$help · $h": "Show this help menu.",
             }),
+            ("🛒 Level Shop", {
+                "$shop": "Browse rewards you can buy by spending your levels.",
+                "$buy color {name}": "Equip a name color (2 levels). Colors: Pink, Red, Orange, Gold, Green, Teal, Blue, Purple.",
+                "$removecolor · $uncolor": "Take off your name color for free.",
+                "$buy title {name}": "Buy a vanity title: Certified Chiller (3), Chill Veteran (5), Big Spender (5).",
+                "$buy roomname {name}": "Give your auto-created voice room a custom name (3 levels).",
+                "$buy nickname {@member} {name}": "Change someone's nickname as a prank (3 levels). Not staff or bots.",
+            }),
             ("🎫 Tickets & Reports", {
                 "🎫 Open a ticket": "Click a button in the create-a-ticket channel to open a private ticket with staff (support, moderation, or media).",
                 "$whisper {message}": "DM me this to send an anonymous report to staff. Your identity stays hidden, and you chat with the team through my DMs.",
@@ -112,7 +120,7 @@ class Help(commands.Cog):
             "Greeter": "Greets each new member with a unique welcome.",
             "Logging": "Logs deleted messages and voice join/leave/switch events to the log channels.",
             "Invite Tracking": "Records who invited each new member and keeps each inviter's running total.",
-            "Bump Reminder": "Pings the bump squad to /bump every 2 hours and gives bumpers bonus XP. Grab the role in self-assign.",
+            "Bump Reminder": "Nudges the bump squad to /bump only after a few days with no bump, and gives bumpers bonus XP. Grab the role in self-assign.",
             "Counting": "Runs the counting game in the counting channel.",
             "Voice Auto-Leave": "Leaves a voice channel when no people are left, and after 10 minutes with no activity.",
             "Clear Channel": "Clears certain text channels every day at 6:30am EST.",

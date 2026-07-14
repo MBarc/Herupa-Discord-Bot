@@ -46,6 +46,14 @@ class CreateRoom(commands.Cog):
         return self.mongo_instance.findSpecificDocumentsByKey(
             database_name=self.dbName, collection_name=memberID, key="privacy_mode")[0]
 
+    def _room_label(self, member):
+        """The name shown after 'MODE - ' on a member's room. Defaults to their
+        display name, or a custom name they bought from the shop ($buy roomname)."""
+        doc = self.mongo_instance.client["roomnames"]["names"].find_one({"_id": str(member.id)})
+        if doc and doc.get("name"):
+            return doc["name"]
+        return member.display_name
+
     def _room_overwrite(self):
         return discord.PermissionOverwrite(
             connect=True, speak=True, read_messages=True, send_messages=True,
@@ -92,7 +100,7 @@ class CreateRoom(commands.Cog):
         category = trigger.category if trigger else None
         if category is None:
             return None
-        suffix = f" - {owner.display_name}"
+        suffix = f" - {self._room_label(owner)}"
         for vc in category.voice_channels:
             if vc.name in (self.createRoomName, self.AFKChannelName):
                 continue
@@ -122,7 +130,7 @@ class CreateRoom(commands.Cog):
 
         try:
             overwrites = self._build_overwrites(ctx.guild, ctx.author, new_mode)
-            new_name = f"{new_mode.upper()} - {ctx.author.display_name}"
+            new_name = f"{new_mode.upper()} - {self._room_label(ctx.author)}"
             # One API call applies both the rename and every permission change.
             # Going private only blocks NEW joins; anyone already connected stays.
             await room.edit(name=new_name, overwrites=overwrites)
@@ -143,7 +151,7 @@ class CreateRoom(commands.Cog):
             memberID = str(member.id)
             privacyMode = self._get_privacy_doc(memberID)["privacy_mode"]
 
-            channelName = f"{privacyMode.upper()} - {member.display_name}"
+            channelName = f"{privacyMode.upper()} - {self._room_label(member)}"
             # Create the room WITH all its permissions in a single call, then move
             # the member immediately — no waiting on a chain of overwrite edits.
             overwrites = self._build_overwrites(member.guild, member, privacyMode)
