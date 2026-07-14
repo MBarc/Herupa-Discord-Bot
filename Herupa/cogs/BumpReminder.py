@@ -1,16 +1,17 @@
 '''
-Purpose: Keep the server's bump-based discovery alive across multiple listing
-bots.
+Purpose: Keep the server's bump-based discovery alive without spamming pings.
 
 For each configured bump bot, when it confirms a successful bump Herupa awards
 the member who ran /bump 10x a normal message's worth of XP (via the Leveling
-cog) and thanks them. After that bot's cooldown, Herupa pings the opt-in "bump
-squad" role in that channel so someone bumps again.
+cog) and thanks them.
+
+Reminders are a gentle nudge, not a per-cooldown alarm: Herupa pings the opt-in
+"bump squad" role only if NOBODY has bumped (on any listing) for REMINDER_INTERVAL.
+If people bump on their own, no one ever gets pinged. Any bump resets the timer.
 
 Each bot's confirmation carries the bumper's identity in its interaction
-metadata, so we credit the right person. Reminder state is per (guild, bot) in
-Mongo, so different bots with different cooldowns each get their own timer and
-everything survives restarts. Add a new bump bot by adding a BUMP_BOTS entry.
+metadata. State is per guild in Mongo and survives restarts. Add a bump bot by
+adding a BUMP_BOTS entry (its user id + a phrase from its success message).
 '''
 
 import os
@@ -27,13 +28,14 @@ sys.path.append(parent_dir)
 
 from tools.HerupaMongo import HerupaMongo
 
-# bot user id -> how to detect its "bump succeeded" message + its cooldown
+# bot user id -> {name, phrase from its "bump succeeded" message}
 BUMP_BOTS = {
-    302050872383242240: {"name": "DISBOARD", "phrase": "bump done", "cooldown": 2 * 60 * 60},
-    1222548162741538938: {"name": "Discadia", "phrase": "has been successfully bumped", "cooldown": 24 * 60 * 60},
+    302050872383242240: {"name": "DISBOARD", "phrase": "bump done"},
+    1222548162741538938: {"name": "Discadia", "phrase": "has been successfully bumped"},
 }
 BUMP_SQUAD_ROLE = "bump squad"
-BUMP_XP = (150, 250)   # 10x a normal message (15-25)
+BUMP_XP = (150, 250)                     # 10x a normal message (15-25)
+REMINDER_INTERVAL = 3 * 24 * 60 * 60     # nudge only after 3 days with no bump
 DB, COL = "bump", "state"
 
 
@@ -76,11 +78,10 @@ class BumpReminder(commands.Cog):
         if bot is None or not self._matches(message, bot["phrase"]):
             return
 
-        # Reset this bot's reminder clock for this guild.
+        # Any bump resets the guild's nudge timer.
         self._col().update_one(
-            {"_id": f"{message.guild.id}:{message.author.id}"},
-            {"$set": {"guild_id": message.guild.id, "bot_id": message.author.id,
-                      "last_bump": time.time(), "channel_id": message.channel.id, "reminded": False}},
+            {"_id": str(message.guild.id)},
+            {"$set": {"last_bump": time.time(), "channel_id": message.channel.id, "reminded": False}},
             upsert=True)
 
         # Reward the bumper.
@@ -100,16 +101,15 @@ class BumpReminder(commands.Cog):
         except discord.HTTPException:
             pass
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(hours=1)
     async def reminder_check(self):
         now = time.time()
         for doc in self._col().find():
-            bot = BUMP_BOTS.get(doc.get("bot_id"))
-            if bot is None or doc.get("reminded") or not doc.get("last_bump"):
+            if doc.get("reminded") or not doc.get("last_bump"):
                 continue
-            if now - doc["last_bump"] < bot["cooldown"]:
+            if now - doc["last_bump"] < REMINDER_INTERVAL:
                 continue
-            guild = self.client.get_guild(int(doc["guild_id"]))
+            guild = self.client.get_guild(int(doc["_id"]))
             channel = guild.get_channel(doc.get("channel_id")) if guild else None
             if channel is None:
                 continue
@@ -117,8 +117,8 @@ class BumpReminder(commands.Cog):
             mention = role.mention if role else "@here"
             try:
                 await channel.send(
-                    f"🔔 {mention} the server can be bumped on **{bot['name']}** again! "
-                    f"Run `/bump` (pick {bot['name']}) to keep us growing. 🚀",
+                    f"🔔 {mention} it's been a few days since our last bump. A quick `/bump` on "
+                    f"DISBOARD or Discadia helps new people find us. Thanks! 🚀",
                     allowed_mentions=discord.AllowedMentions(roles=True, everyone=True))
                 self._col().update_one({"_id": doc["_id"]}, {"$set": {"reminded": True}})
             except discord.HTTPException:
