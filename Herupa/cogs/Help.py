@@ -112,6 +112,7 @@ class Help(commands.Cog):
             "Greeter": "Greets each new member with a unique welcome.",
             "Logging": "Logs deleted messages and voice join/leave/switch events to the log channels.",
             "Invite Tracking": "Records who invited each new member and keeps each inviter's running total.",
+            "Bump Reminder": "Pings the bump squad to /bump every 2 hours and gives bumpers bonus XP. Grab the role in self-assign.",
             "Counting": "Runs the counting game in the counting channel.",
             "Voice Auto-Leave": "Leaves a voice channel when no people are left, and after 10 minutes with no activity.",
             "Clear Channel": "Clears certain text channels every day at 6:30am EST.",
