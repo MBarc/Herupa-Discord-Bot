@@ -69,7 +69,6 @@ class Help(commands.Cog):
             ("🛠️ Utility", {
                 "$membercount · $mc": "Show the server's member and bot counts.",
                 "$qrcode {data} · $qr": "Generate a QR code.",
-                "$urlshorter {url} · $url": "Shorten a URL.",
                 "$whoisinspace · $wiis": "See who's currently in space.",
                 "$isslive": "Get a link to the ISS live stream.",
                 "$invitedby {@member}": "See who invited a member (defaults to you).",
