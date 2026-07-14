@@ -26,7 +26,8 @@ sys.path.append(parent_dir)
 from tools.HerupaMongo import HerupaMongo
 
 WELCOME_XP = (25, 40)                # bonus per welcome (a normal message is 15-25)
-WELCOME_WINDOW = 24 * 60 * 60        # only welcomes within a day of the join count
+WELCOME_WINDOW = 7 * 24 * 60 * 60    # welcomes within a week of the join count (people
+                                     # often welcome a newcomer a day+ after they join)
 DB, COL = "welcomes", "credited"
 
 
