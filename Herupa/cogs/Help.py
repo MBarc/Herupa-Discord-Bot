@@ -117,7 +117,7 @@ class Help(commands.Cog):
         backgroundTasks = {
             "Activity Stats": "Tracks voice time, AFK time, and messages sent for the leaderboards (see $lb).",
             "Newbie / ToS": "Assigns the newbie role to arrivals, then chillies once they accept the ToS.",
-            "Greeter": "Greets each new member with a unique welcome.",
+            "Welcome Rewards": "Earn bonus XP for welcoming new members — reply to their join message in general-chat (tap \"Wave to say hi 👋\").",
             "Logging": "Logs deleted messages and voice join/leave/switch events to the log channels.",
             "Invite Tracking": "Records who invited each new member and keeps each inviter's running total.",
             "Bump Reminder": "Nudges the bump squad to /bump only after a few days with no bump, and gives bumpers bonus XP. Grab the role in self-assign.",
