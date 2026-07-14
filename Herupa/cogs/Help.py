@@ -39,6 +39,15 @@ class Help(commands.Cog):
             "​": "Every command starts with **$**, and most have a short alias — e.g. `$help` = `$h`.",
         }
 
+        # Only show staff pages to staff, so members see just what they can use.
+        # Deputies don't have native Discord mod perms (moderation runs through
+        # Herupa), so staff is detected by role, not by permission.
+        author_roles = {r.name.lower() for r in getattr(ctx.author, "roles", [])}
+        is_mod = bool(author_roles & {"head chill", "sheriff", "deputy"})
+        is_ticket_staff = bool(author_roles & {
+            "head chill", "sheriff", "deputy",
+            "techie manager", "techie", "media manager", "media"})
+
         categories = [
             ("🎉 Fun & Novelty", {
                 "$lenny · $l": "Herupa responds with ( ͡° ͜ʖ ͡°)",
@@ -63,10 +72,19 @@ class Help(commands.Cog):
                 "$urlshorter {url} · $url": "Shorten a URL.",
                 "$whoisinspace · $wiis": "See who's currently in space.",
                 "$isslive": "Get a link to the ISS live stream.",
+                "$invitedby {@member}": "See who invited a member (defaults to you).",
+                "$invites {@member} · $invited": "See who a member has invited (defaults to you).",
                 "$ping · $p": "Check that Herupa is alive (pong!).",
                 "$help · $h": "Show this help menu.",
             }),
-            ("🔨 Moderation  (staff only)", {
+            ("🎫 Tickets & Reports", {
+                "🎫 Open a ticket": "Click a button in the create-a-ticket channel to open a private ticket with staff (support, moderation, or media).",
+                "$whisper {message}": "DM me this to send an anonymous report to staff. Your identity stays hidden, and you chat with the team through my DMs.",
+            }),
+        ]
+
+        if is_mod:
+            categories.append(("🔨 Moderation  (staff)", {
                 "$timeout {@member} {minutes} {reason} · $to":
                     "Mute a member.  **Deputy:** ≤ 60 min  •  **Sheriff+:** any duration.",
                 "$kick {@member} {reason}":
@@ -77,20 +95,31 @@ class Help(commands.Cog):
                 "$purgatory {@member} · $purg": "Send a member to purgatory.",
                 "$rolepanel [single] {title} {@role...} · $rp":
                     "Post a self-assign role button panel. 'single' = picking one role swaps out the others.",
-            }),
-        ]
+            }))
+
+        if is_ticket_staff:
+            categories.append(("🎫 Ticket Staff", {
+                "$ticketpanel · $tpanel": "Post the ticket panel in the current channel.",
+                "$claim": "Claim the current ticket so members know who is handling it.",
+                "$ticketadd {@member} · $add": "Add a member to the current ticket.",
+                "$close": "Close the current ticket and save a transcript.",
+            }))
 
         backgroundTasks = {
             "AFK": "Herupa tracks how long members are AFK and moves them to the AFK channel.",
             "Newbie / ToS": "Assigns the newbie role to arrivals, then chillies once they accept the ToS.",
             "Greeter": "Greets each new member with a unique welcome.",
             "Logging": "Logs deleted messages and voice join/leave/switch events to the log channels.",
+            "Invite Tracking": "Records who invited each new member and keeps each inviter's running total.",
+            "Counting": "Runs the counting game in the counting channel.",
+            "Voice Auto-Leave": "Leaves a voice channel when no people are left, and after 10 minutes with no activity.",
             "Clear Channel": "Clears certain text channels every day at 6:30am EST.",
             "Favorites": "Notifies your mutual favorites when you connect to a voice channel.",
             "Destroy Room": "Deletes an auto-created room when the last person leaves (backup sweep at 6:30am EST).",
         }
 
-        # Page 0 is the landing page; pages 1..N are the categories.
+        # Page 0 is the landing page; pages 1..N are the categories (staff pages
+        # only present for staff).
         pages = [("Home", landing)] + categories
         cur_page = 0
 
