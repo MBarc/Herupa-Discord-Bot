@@ -50,6 +50,11 @@ class Favorites(commands.Cog):
         # Grabbing the member that we're adding as a favorite
         mention = str(ctx.message.mentions[0].id)
 
+        # You can't favorite yourself (it would just DM you about your own joins).
+        if mention == authorID:
+            await ctx.channel.send("You can't favorite yourself!")
+            return
+
         # Adding the member as a favorite for the author
         self.mongo_instance.addCollectionEntry(database_name=self.dbName, collection_name=authorID, payload={"id": mention})
 
@@ -147,6 +152,9 @@ class Favorites(commands.Cog):
         sent = 0
 
         for recipient_id in self._favorite_ids(joiner_id):
+            # Never notify yourself about your own join (e.g. a stale self-favorite).
+            if recipient_id == joiner_id:
+                continue
             recipient = guild.get_member(int(recipient_id))
             if recipient is None or recipient.bot:
                 continue
