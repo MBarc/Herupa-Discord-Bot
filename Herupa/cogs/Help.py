@@ -57,6 +57,7 @@ class Help(commands.Cog):
                 "$pokemon {name} · $pk": "Look up info on a Pokémon.",
                 "$poll · $pl": "Create a poll people can vote on.",
                 "$herupasay {text} · $hs": "Herupa joins your voice channel and says the text.",
+                "$mock": "Points you at the shop's mock item ($buy mock @member).",
                 "$avatarpic {@member} · $ap": "Show a member's avatar.",
             }),
             ("🔊 Voice & Rooms", {
@@ -65,6 +66,14 @@ class Help(commands.Cog):
                 "$addfavorite {@member} · $af": "Favorite a member and get pinged when they join a VC (must be mutual).",
                 "$removefavorite {@member} · $rf": "Remove a member from your favorites.",
                 "$displayfavorites · $df": "See your list of favorites.",
+            }),
+            ("🎶 Music", {
+                "$music {song or link} · $play": "Summon a free Hibiki DJ to your voice channel and play a song (searches YouTube).",
+                "$skip": "Skip the current song.",
+                "$pause / $resume": "Pause or resume playback.",
+                "$queue · $q": "See what's playing and what's up next in your channel.",
+                "$np": "Show the current song.",
+                "$stop": "Clear the queue and send the DJ home.",
             }),
             ("🛠️ Utility", {
                 "$membercount · $mc": "Show the server's member and bot counts.",
@@ -75,6 +84,7 @@ class Help(commands.Cog):
                 "$invites {@member} · $invited": "See who a member has invited (defaults to you).",
                 "$leaderboard {stat} · $lb": "Top members by voice time, invites, AFK time, or messages (monthly and all-time).",
                 "$rank {@member} · $level": "See your level, XP, and progress to the next level (defaults to you).",
+                "$daily": "Claim 100 XP once a day. Streaks boost it: 2x at 3 days, 3x at 5, 5x at 10.",
                 "$ping · $p": "Check that Herupa is alive (pong!).",
                 "$help · $h": "Show this help menu.",
             }),
@@ -85,6 +95,7 @@ class Help(commands.Cog):
                 "$buy title {name}": "Buy a vanity title: Certified Chiller (3), Chill Veteran (5), Big Spender (5).",
                 "$buy roomname {name}": "Give your auto-created voice room a custom name (3 levels).",
                 "$buy nickname {@member} {name}": "Change someone's nickname as a prank (3 levels). Not staff or bots.",
+                "$buy mock {@member}": "Herupa repeats everything they say in your voice channel for a minute (5 levels). Running away only delays it.",
             }),
             ("🎫 Tickets & Reports", {
                 "🎫 Open a ticket": "Click a button in the create-a-ticket channel to open a private ticket with staff (support, moderation, or media).",
@@ -123,6 +134,7 @@ class Help(commands.Cog):
             "Bump Reminder": "Nudges the bump squad to /bump only after a few days with no bump, and gives bumpers bonus XP. Grab the role in self-assign.",
             "Counting": "Runs the counting game in the counting channel.",
             "Voice Auto-Leave": "Leaves a voice channel when no people are left, and after 10 minutes with no activity.",
+            "Hibiki DJ Crew": "Red, Green, and Blue Hibiki play music in voice channels. Whoever is free answers $music, and they head home when idle or alone.",
             "Clear Channel": "Clears certain text channels every day at 6:30am EST.",
             "Favorites": "Notifies your mutual favorites when you connect to a voice channel.",
             "Destroy Room": "Deletes an auto-created room when the last person leaves (backup sweep at 6:30am EST).",

@@ -10,6 +10,11 @@ Items:
   - Name your voice room (3 levels): a custom name for your auto-created VC.
   - Change someone's nickname (3 levels): the prank, with guardrails (no staff/
     bots, 32-char cap, slur-filtered, logged to law-chat, target can undo).
+  - Mock someone (5 levels): Herupa joins the buyer's VC and parrots the
+    target's voice back for a minute (Mock cog does the audio work). Staff are
+    fair game (user's call), bots aren't. Refunded only if she couldn't join
+    or the target stayed silent; fleeing banks the leftover time as a mock
+    debt the Mock cog collects on their next VC appearance.
 
 Commands: $shop to browse, $buy <item> [options], $removecolor.
 '''
@@ -35,6 +40,8 @@ COLOR_COST = 2
 TITLES = {"Certified Chiller": 3, "Chill Veteran": 5, "Big Spender": 5}
 ROOMNAME_COST = 3
 NICKNAME_COST = 3
+MOCK_COST = 5
+MOCK_SECONDS = 60
 STAFF_ROLES = {"head chill", "sheriff", "deputy"}
 LAW_CHAT = 803751026355863553
 
@@ -107,6 +114,11 @@ class Shop(commands.Cog):
             name="😈  Change a Nickname  ·  3 levels",
             value="`$buy nickname @user <new name>` renames someone (not staff or bots).",
             inline=False)
+        embed.add_field(
+            name="🦜  Mock Someone  ·  5 levels",
+            value=("`$buy mock @user` sends me into your voice channel to repeat "
+                   "everything they say for a minute. You must be in the VC with them."),
+            inline=False)
         embed.set_footer(text="Prices are in levels. Spending lowers your leaderboard rank too.")
         await ctx.send(embed=embed)
 
@@ -123,9 +135,12 @@ class Shop(commands.Cog):
             await self._buy_roomname(ctx, rest)
         elif item == "nickname":
             await self._buy_nickname(ctx, rest)
+        elif item == "mock":
+            await self._buy_mock(ctx)
         else:
             await ctx.send("Usage: `$buy color <name>`, `$buy title <name>`, "
-                           "`$buy roomname <name>`, or `$buy nickname @user <name>`. See `$shop`.")
+                           "`$buy roomname <name>`, `$buy nickname @user <name>`, "
+                           "or `$buy mock @user`. See `$shop`.")
 
     async def _buy_color(self, ctx, name):
         if not name:
@@ -208,6 +223,54 @@ class Shop(commands.Cog):
             try:
                 await log.send(embed=discord.Embed(
                     description=f"😈 {ctx.author.mention} used the shop to nickname {target.mention} to **{nick}**.",
+                    colour=0x888888), allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:
+                pass
+
+    async def _buy_mock(self, ctx):
+        if not ctx.message.mentions:
+            await ctx.send("Usage: `$buy mock @user` (while you're in a voice channel with them)"); return
+        target = ctx.message.mentions[0]
+        if target.bot:
+            await ctx.send("Bots have no shame to mock."); return
+        if ctx.author.voice is None or ctx.author.voice.channel is None:
+            await ctx.send("You have to be in the voice channel with your victim to buy a mock."); return
+        channel = ctx.author.voice.channel
+        if target.voice is None or target.voice.channel != channel:
+            await ctx.send(f"{target.display_name} isn't in your voice channel."); return
+        mock_cog = self.client.get_cog("Mock")
+        if mock_cog is None:
+            await ctx.send("The mock machine is out of order, let staff know."); return
+        if ctx.guild.id in mock_cog.active_guilds or ctx.guild.voice_client is not None:
+            await ctx.send("I'm already mocking someone here. One at a time!"); return
+        ok, lvl = self._spend(ctx.author.id, MOCK_COST)
+        if not ok:
+            await self._afford_fail(ctx, MOCK_COST, lvl); return
+        await ctx.send(f"🦜 {ctx.author.mention} bought a mock on {target.mention}! For the "
+                       f"next minute, everything they say is coming right back at them. "
+                       f"(-{MOCK_COST} levels, you're level **{lvl}**)")
+        status, remaining = await mock_cog.run_mock(channel, target, MOCK_SECONDS)
+        if status in ("nojoin", "silent"):
+            # nothing got mocked and there's nothing to chase — refund
+            self._lvl_col().update_one({"_id": str(ctx.author.id)},
+                                       {"$set": {"xp": total_xp_for_level(lvl + MOCK_COST)}})
+            reason = ("I couldn't join that voice channel." if status == "nojoin"
+                      else f"**{target.display_name}** never said a word.")
+            await ctx.send(f"{reason} Refunded your {MOCK_COST} levels, {ctx.author.mention}.")
+            return
+        if status == "fled":
+            # no refunds for runners — the rest is served on their next VC visit
+            mock_cog.add_debt(ctx.guild.id, target.id, ctx.author.id,
+                              ctx.channel.id, remaining)
+            await ctx.send(f"🏃 {target.display_name} fled with **{int(remaining)}s** "
+                           "left on the clock! No refunds — I'll finish the job next "
+                           "time they join a voice channel. 😈")
+        log = ctx.guild.get_channel(LAW_CHAT)
+        if log:
+            try:
+                await log.send(embed=discord.Embed(
+                    description=(f"🦜 {ctx.author.mention} bought a mock on {target.mention} "
+                                 f"in **{channel.name}**."),
                     colour=0x888888), allowed_mentions=discord.AllowedMentions.none())
             except discord.HTTPException:
                 pass
