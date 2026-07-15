@@ -21,7 +21,7 @@ import sys
 import time
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -51,10 +51,22 @@ ALIASES = {
     "messages": "messages", "message": "messages", "msg": "messages", "msgs": "messages",
 }
 
+# Monthly champions: whoever finished #1 last month in each category gets a big
+# XP boost, announced at the start of the new month. Single tunable amount.
+CHAMPION_XP = 1500
+CHAMPION_CATEGORIES = ORDER          # all four boards reward their monthly #1
+CHAMPIONS_DB, CHAMPIONS_COL = "champions", "state"
+
 
 def month_key(when=None):
     when = when or datetime.datetime.now(datetime.timezone.utc)
     return when.strftime("%Y-%m")
+
+
+def prev_month_key(cur):
+    """The 'YYYY-MM' before a given 'YYYY-MM'."""
+    y, m = map(int, cur.split("-"))
+    return f"{y - 1:04d}-12" if m == 1 else f"{y:04d}-{m - 1:02d}"
 
 
 def fmt_duration(seconds):
@@ -90,6 +102,10 @@ class Leaderboard(commands.Cog):
     async def cog_load(self):
         # Capture anyone already in voice so a restart doesn't lose their session.
         asyncio.create_task(self._prime_voice())
+        self.champion_check.start()
+
+    async def cog_unload(self):
+        self.champion_check.cancel()
 
     async def _prime_voice(self):
         for _ in range(60):
@@ -188,6 +204,84 @@ class Leaderboard(commands.Cog):
                             value=f"#{viewer_rank[0]}  ·  {fmt_value(info['kind'], viewer_rank[1])}",
                             inline=False)
         return embed
+
+    # --------------------------- monthly champions ---------------------------
+
+    def _champions(self):
+        return self.mongo.client[CHAMPIONS_DB][CHAMPIONS_COL]
+
+    @tasks.loop(hours=6)
+    async def champion_check(self):
+        """Once a month has fully ended, pay its #1s and announce them. Runs a few
+        times a day and is idempotent, so a restart or a late start still pays out
+        exactly once."""
+        col = self._champions()
+        cur = month_key()
+
+        # First run ever: remember when we started so we never reach back and
+        # "award" months that predate this feature (their data is partial/empty).
+        meta = col.find_one({"_id": "meta"})
+        if meta is None:
+            col.insert_one({"_id": "meta", "start_month": cur})
+            return
+
+        prev = prev_month_key(cur)
+        if prev < meta["start_month"] or col.find_one({"_id": prev}):
+            return  # before we started, or already paid out
+        if not self.client.guilds:
+            return  # need the guild to announce / resolve members; try next tick
+        await self._award_month(prev)
+
+    async def _award_month(self, month):
+        guild = self.client.guilds[0]
+        leveling = self.client.get_cog("Leveling")
+        if leveling is None:
+            return  # can't pay XP without it; retry next tick
+
+        winners = {}
+        for metric in CHAMPION_CATEGORIES:
+            rows = self._rows(metric, month)
+            if rows:
+                winners[metric] = rows[0]  # (user_id, value), already sorted desc
+
+        # Mark the month done BEFORE paying so a mid-way crash can't double-pay.
+        self._champions().insert_one(
+            {"_id": month,
+             "winners": {m: {"id": str(u), "value": v} for m, (u, v) in winners.items()}})
+
+        for uid, _ in winners.values():
+            leveling._add_xp(int(uid), CHAMPION_XP)
+
+        if winners:
+            await self._announce_champions(guild, month, winners)
+
+    async def _announce_champions(self, guild, month, winners):
+        channel = guild.system_channel or discord.utils.get(guild.text_channels, name="🤠general-chat🤠")
+        if channel is None:
+            return
+        title = datetime.datetime.strptime(month, "%Y-%m").strftime("%B %Y")
+
+        lines, mentions = [], []
+        for metric in CHAMPION_CATEGORIES:
+            if metric not in winners:
+                continue
+            uid, val = winners[metric]
+            info = METRICS[metric]
+            member = guild.get_member(int(uid))
+            name = member.mention if member else "Unknown member"
+            if member and member.mention not in mentions:
+                mentions.append(member.mention)
+            lines.append(f"{info['emoji']}  **{info['label']}** — {name}  ·  {fmt_value(info['kind'], val)}")
+
+        embed = discord.Embed(
+            title=f"👑  {title} Champions!  👑",
+            description=(f"Last month's top chillers each earned **+{CHAMPION_XP:,} XP**! "
+                         "New month, fresh race, go get it! 🏆\n\n" + "\n".join(lines)),
+            colour=PINK)
+        try:
+            await channel.send(content=" ".join(mentions) or None, embed=embed)
+        except discord.HTTPException:
+            pass
 
     # --------------------------- command ---------------------------
 
