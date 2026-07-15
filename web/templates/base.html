@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Herupa{% endblock %} · Herupa</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='8' r='4' fill='%23FFB7C5'/%3E%3Ccircle cx='8' cy='12' r='4' fill='%23F797AC'/%3E%3Ccircle cx='16' cy='12' r='4' fill='%23F797AC'/%3E%3Ccircle cx='10' cy='16' r='4' fill='%23FFB7C5'/%3E%3Ccircle cx='14' cy='16' r='4' fill='%23FFCFD9'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/herupa.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="/">
+      <img src="https://cdn.discordapp.com/avatars/643562852741021707/55f883fbbd65232460042ea2826dfea1.png?size=64" alt="" class="brand-avatar">
+      <span class="brand-name">Herupa<span class="brand-sub">control room</span></span>
+    </a>
+    <nav aria-label="Sections">
+      <a href="/" class="{{ 'active' if active == 'dashboard' }}">Dashboard <span class="kana">概要</span></a>
+      <a href="/schedule" class="{{ 'active' if active == 'schedule' }}">Schedule <span class="kana">予定</span></a>
+      <a href="/composer" class="{{ 'active' if active == 'composer' }}">Composer <span class="kana">作成</span></a>
+      <a href="/levels" class="{{ 'active' if active == 'levels' }}">Levels <span class="kana">レベル</span></a>
+      <a href="/moderation" class="{{ 'active' if active == 'moderation' }}">Moderation <span class="kana">管理</span></a>
+      <a href="/tickets" class="{{ 'active' if active == 'tickets' }}">Tickets <span class="kana">チケット</span></a>
+      <a href="/panels" class="{{ 'active' if active == 'panels' }}">Panels <span class="kana">パネル</span></a>
+    </nav>
+    <div class="sidebar-foot">
+      <svg class="scene" viewBox="0 0 220 90" aria-hidden="true">
+        <circle cx="178" cy="22" r="12" fill="#9CA0B4" opacity=".8"/>
+        <path d="M0 62 Q 70 46 140 58 T 220 54 V 90 H 0 Z" fill="#3B3E50"/>
+        <path d="M0 74 Q 90 62 220 72 V 90 H 0 Z" fill="#2F3142"/>
+        <rect x="38" y="42" width="4" height="22" rx="2" fill="#463A44"/>
+        <circle cx="40" cy="34" r="13" fill="#F2A9BB"/>
+        <circle cx="30" cy="40" r="9" fill="#F8C8D4"/>
+        <circle cx="50" cy="40" r="8" fill="#FDD9E2"/>
+        <circle cx="112" cy="80" r="2" fill="#F8C8D4"/>
+        <circle cx="150" cy="70" r="1.6" fill="#F2A9BB"/>
+        <circle cx="86" cy="72" r="1.6" fill="#FDD9E2"/>
+      </svg>
+      <a class="logout" href="/logout">Log out</a>
+    </div>
+  </aside>
+  <main class="content">
+    {% if ok %}<div class="flash flash-ok" role="status">{{ ok }}</div>{% endif %}
+    {% if err %}<div class="flash flash-err" role="alert">{{ err }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

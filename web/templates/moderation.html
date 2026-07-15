@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Moderation{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Moderation</h1>
+  <p class="page-sub">Deputy activity, AutoMod rules, and the mock debt ledger.</p>
+</header>
+
+<div class="two-col">
+  <section class="card">
+    <h2>Deputy removals, past hour</h2>
+    {% if budgets %}
+    <table>
+      <thead><tr><th>Deputy</th><th>Used</th></tr></thead>
+      <tbody>
+      {% for b in budgets %}
+        <tr><td>{{ b.name }}</td><td class="mono">{{ b.used }} of {{ b.limit }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No deputy has used the kick or ban budget in the past hour.</p>
+    {% endif %}
+
+    <h2 class="mt">Recent removals</h2>
+    {% if removals %}
+    <table>
+      <thead><tr><th>When (Eastern)</th><th>Deputy</th><th>Action</th><th>Target</th><th>Reason</th></tr></thead>
+      <tbody>
+      {% for e in removals %}
+        <tr><td class="mono">{{ e.when }}</td><td>{{ e.deputy }}</td><td>{{ e.action }}</td>
+            <td>{{ e.target }}</td><td>{{ e.reason or "" }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No removals on record. The window log prunes itself hourly.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <section class="card">
+      <h2>AutoMod rules</h2>
+      {% if rules %}
+      <table>
+        <thead><tr><th>Rule</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for ru in rules %}
+          <tr><td>{{ ru.name }}</td>
+              <td><span class="dot {{ 'on' if ru.enabled else 'off' }}"></span>{{ "on" if ru.enabled else "off" }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Could not load AutoMod rules from Discord.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Mock debts</h2>
+      {% if debts %}
+      <table>
+        <thead><tr><th>Owes</th><th>Time left</th><th>Bought by</th><th></th></tr></thead>
+        <tbody>
+        {% for d in debts %}
+          <tr>
+            <td>{{ d.target }}</td><td class="mono">{{ d.secs }}s</td><td>{{ d.buyer }}</td>
+            <td class="row-actions">
+              <form method="post" action="/moderation/debt/forgive">
+                <input type="hidden" name="key" value="{{ d._id }}">
+                <button class="btn btn-ghost btn-small">Forgive</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Nobody owes mock time. Herupa is satisfied.</p>
+      {% endif %}
+    </section>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Law chat, latest</h2>
+  {% if feed %}
+  <ul class="feed">
+    {% for f in feed %}
+    <li><span class="mono">{{ f.when }}</span> <strong>{{ f.author }}</strong> {{ f.text }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">Could not load law chat right now.</p>
+  {% endif %}
+</section>
+{% endblock %}

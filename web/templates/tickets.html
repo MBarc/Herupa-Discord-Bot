@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Tickets{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Tickets</h1>
+  <p class="page-sub">Everything the ticket system has opened. Anonymous reporters stay anonymous here too.</p>
+</header>
+
+<section class="card">
+  <h2>Open</h2>
+  {% if open_docs %}
+  <table>
+    <thead><tr><th>#</th><th>Team</th><th>Opened by</th><th>Claimed by</th><th>Opened (Eastern)</th><th></th></tr></thead>
+    <tbody>
+    {% for t in open_docs %}
+      <tr>
+        <td class="mono">{{ "%04d"|format(t.number or 0) }}</td>
+        <td>{{ t.category }}</td>
+        <td>{{ t.opener }}</td>
+        <td>{{ t.claimer or "unclaimed" }}</td>
+        <td class="mono">{{ t.when }}</td>
+        <td><a class="btn btn-ghost btn-small" href="{{ t.link }}">Open in Discord</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No open tickets. Quiet day.</p>
+  {% endif %}
+</section>
+
+<div class="two-col">
+  <section class="card">
+    <h2>Recently closed</h2>
+    {% if closed_docs %}
+    <table>
+      <thead><tr><th>#</th><th>Team</th><th>Opened by</th><th>Opened (Eastern)</th></tr></thead>
+      <tbody>
+      {% for t in closed_docs %}
+        <tr>
+          <td class="mono">{{ "%04d"|format(t.number or 0) }}</td>
+          <td>{{ t.category }}</td>
+          <td>{{ t.opener }}</td>
+          <td class="mono">{{ t.when }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No closed tickets yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Transcripts</h2>
+    <p class="hint">Saved on the logging server when a ticket closes.</p>
+    {% if transcripts %}
+    <ul class="feed">
+      {% for tr in transcripts %}
+      <li><span class="mono">{{ tr.when }}</span> <a href="{{ tr.url }}">{{ tr.name }}</a></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No transcripts found on the logging server.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

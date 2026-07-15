@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Composer{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Composer</h1>
+  <p class="page-sub">Send a message as Herupa right now. The preview shows how it lands in Discord.</p>
+</header>
+
+<div class="two-col">
+  <section class="card">
+    <h2>Write</h2>
+    <form method="post" action="/composer/send" class="form" id="composer-form">
+      <label for="c-channel">Channel</label>
+      <select id="c-channel" name="channel_id" required>
+        {% for c in channels %}<option value="{{ c.id }}">#{{ c.name }}</option>{% endfor %}
+      </select>
+
+      <label for="c-content">Message</label>
+      <textarea id="c-content" name="content" rows="5" placeholder="Write it like Herupa would say it..."></textarea>
+
+      <label class="check"><input type="checkbox" id="c-use-embed" name="use_embed" value="1" data-toggles="c-embed"> Add an embed</label>
+      <div id="c-embed" class="embed-fields" hidden>
+        <label for="c-etitle">Embed title</label>
+        <input id="c-etitle" name="embed_title">
+        <label for="c-edesc">Embed text</label>
+        <textarea id="c-edesc" name="embed_description" rows="4"></textarea>
+        <div class="form-row">
+          <div>
+            <label for="c-ecolor">Color</label>
+            <input id="c-ecolor" name="embed_color" type="color" value="#FFB7C5">
+          </div>
+          <div>
+            <label for="c-efooter">Footer</label>
+            <input id="c-efooter" name="embed_footer">
+          </div>
+        </div>
+      </div>
+
+      <p class="hint">Tip: send it to your bot playground channel first to see it for real.</p>
+      <button type="submit" class="btn btn-primary">Send as Herupa</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Preview</h2>
+    <div class="discord-preview">
+      <img class="dp-avatar" src="https://cdn.discordapp.com/avatars/643562852741021707/55f883fbbd65232460042ea2826dfea1.png?size=64" alt="">
+      <div class="dp-body">
+        <div class="dp-head">Herupa <span class="dp-tag">APP</span> <span class="dp-time">Today</span></div>
+        <div class="dp-content" id="p-content"></div>
+        <div class="dp-embed" id="p-embed" hidden>
+          <div class="dp-embed-bar" id="p-bar"></div>
+          <div class="dp-embed-inner">
+            <div class="dp-embed-title" id="p-title"></div>
+            <div class="dp-embed-desc" id="p-desc"></div>
+            <div class="dp-embed-footer" id="p-footer"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/herupa.js"></script>{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Schedule{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Message schedule</h1>
+  <p class="page-sub">Herupa sends these on time, even holiday mornings. All times are Eastern.</p>
+</header>
+
+<div class="two-col">
+  <section class="card">
+    <h2>Schedule a message</h2>
+    <form method="post" action="/schedule/create" class="form">
+      <label for="s-name">Name</label>
+      <input id="s-name" name="name" placeholder="Merry Christmas" required>
+
+      <label for="s-channel">Channel</label>
+      <select id="s-channel" name="channel_id" required>
+        {% for c in channels %}<option value="{{ c.id }}">#{{ c.name }}</option>{% endfor %}
+      </select>
+
+      <div class="form-row">
+        <div>
+          <label for="s-wall">Send at</label>
+          <input id="s-wall" name="wall" type="datetime-local" required>
+        </div>
+        <div>
+          <label for="s-repeat">Repeat</label>
+          <select id="s-repeat" name="repeat">
+            <option value="none">Does not repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+      </div>
+
+      <label for="s-content">Message</label>
+      <textarea id="s-content" name="content" rows="4" placeholder="Merry Christmas, Chill Club! 🎄"></textarea>
+
+      <label class="check"><input type="checkbox" name="use_embed" value="1" data-toggles="s-embed"> Add an embed</label>
+      <div id="s-embed" class="embed-fields" hidden>
+        <label for="s-etitle">Embed title</label>
+        <input id="s-etitle" name="embed_title">
+        <label for="s-edesc">Embed text</label>
+        <textarea id="s-edesc" name="embed_description" rows="3"></textarea>
+        <label for="s-ecolor">Color</label>
+        <input id="s-ecolor" name="embed_color" type="color" value="#FFB7C5">
+      </div>
+
+      <button type="submit" class="btn btn-primary">Schedule it</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Scheduled</h2>
+    {% if docs %}
+    <table>
+      <thead><tr><th>Name</th><th>Channel</th><th>Next send</th><th>Repeat</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {% for d in docs %}
+        <tr class="{{ 'row-muted' if not d.enabled }}">
+          <td>{{ d.name }}</td>
+          <td>#{{ d.channel }}</td>
+          <td class="mono">{{ d.when if d.enabled else (("sent " + d.last) if d.last else "") }}</td>
+          <td>{{ d.repeat }}</td>
+          <td>{{ "on" if d.enabled else ("sent" if d.repeat == "none" and d.last else "paused") }}</td>
+          <td class="row-actions">
+            <form method="post" action="/schedule/toggle">
+              <input type="hidden" name="doc_id" value="{{ d.id }}">
+              <button class="btn btn-ghost btn-small">{{ "Pause" if d.enabled else "Enable" }}</button>
+            </form>
+            <form method="post" action="/schedule/delete">
+              <input type="hidden" name="doc_id" value="{{ d.id }}">
+              <button class="btn btn-danger btn-small">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">Nothing here yet. The form on the left schedules the first one.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/herupa.js"></script>{% endblock %}

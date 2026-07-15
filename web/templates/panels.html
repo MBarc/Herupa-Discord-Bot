@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Panels{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Panels</h1>
+  <p class="page-sub">Build and post button panels. They work with the bot's existing button handlers, so panels posted here behave exactly like ones posted in Discord.</p>
+</header>
+
+<div class="two-col">
+  <section class="card">
+    <h2>Role panel</h2>
+    <form method="post" action="/panels/roles" class="form">
+      <label for="pn-title">Panel title</label>
+      <input id="pn-title" name="title" placeholder="Pick your pronouns" required>
+
+      <label for="pn-desc">Panel text</label>
+      <textarea id="pn-desc" name="description" rows="2" placeholder="Optional line under the title"></textarea>
+
+      <div class="form-row">
+        <div>
+          <label for="pn-channel">Post to</label>
+          <select id="pn-channel" name="channel_id" required>
+            {% for c in channels %}<option value="{{ c.id }}">#{{ c.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="pn-mode">Behavior</label>
+          <select id="pn-mode" name="mode">
+            <option value="t">Toggle: click to add, click again to remove</option>
+            <option value="s">Single: picking one swaps out the others</option>
+          </select>
+        </div>
+      </div>
+
+      <label>Roles on the panel</label>
+      <div class="role-grid">
+        {% for r in roles %}
+        <label class="check role-check">
+          <input type="checkbox" name="role_ids" value="{{ r.id }}">
+          <span class="role-dot" style="background: {{ '#%06x'|format(r.color) if r.color else 'var(--moon)' }}"></span>
+          {{ r.name }}
+        </label>
+        {% endfor %}
+      </div>
+      <p class="hint">Only safe roles are listed: nothing managed, nothing with moderator powers, nothing above Herupa.</p>
+      <button type="submit" class="btn btn-primary">Post role panel</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Ticket panel</h2>
+    <p>Reposts the three team buttons (Tech Support, Moderation, Media) and pins the message. The buttons connect to the live ticket system.</p>
+    <form method="post" action="/panels/tickets" class="form">
+      <label for="tk-channel">Post to</label>
+      <select id="tk-channel" name="channel_id" required>
+        {% for c in channels %}<option value="{{ c.id }}">#{{ c.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn btn-primary">Post and pin ticket panel</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

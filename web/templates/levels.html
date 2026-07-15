@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Levels{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Levels</h1>
+  <p class="page-sub">Look up any member's XP, level, and daily streak. Adjustments land instantly.</p>
+</header>
+
+<section class="card">
+  <form method="get" action="/levels" class="search-row">
+    <label class="sr-only" for="lv-q">Search members</label>
+    <input id="lv-q" name="q" value="{{ q }}" placeholder="Search a member by name..." autofocus>
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+</section>
+
+{% for m in results %}
+<section class="card member-card">
+  <div class="member-head">
+    <img src="{{ m.avatar }}" alt="" class="member-avatar">
+    <div>
+      <div class="member-name">{{ m.name }} {% if m.bot %}<span class="dp-tag">BOT</span>{% endif %}</div>
+      <div class="member-sub mono">@{{ m.username }} · {{ m.id }}</div>
+    </div>
+    <div class="member-level">
+      <span class="level-big">Lv {{ m.level }}</span>
+      <span class="member-sub">{{ "{:,}".format(m.xp) }} XP</span>
+    </div>
+  </div>
+  <div class="xp-bar" role="img" aria-label="{{ m.pct }} percent to the next level">
+    <div class="xp-fill" style="width: {{ m.pct }}%"></div>
+  </div>
+  <div class="member-sub">{{ "{:,}".format(m.to_next) }} XP to level {{ m.level + 1 }} ·
+    daily streak {{ m.streak }} (last claim {{ m.last_daily }})</div>
+
+  <form method="post" action="/levels/adjust" class="adjust-row">
+    <input type="hidden" name="user_id" value="{{ m.id }}">
+    <input type="hidden" name="q" value="{{ q }}">
+    <div>
+      <label for="dl-{{ m.id }}">Levels +/-</label>
+      <input id="dl-{{ m.id }}" name="levels_delta" type="number" step="1" placeholder="0">
+    </div>
+    <div>
+      <label for="dx-{{ m.id }}">XP +/-</label>
+      <input id="dx-{{ m.id }}" name="xp_delta" type="number" step="1" placeholder="0">
+    </div>
+    <div class="grow">
+      <label for="dn-{{ m.id }}">Note</label>
+      <input id="dn-{{ m.id }}" name="note" placeholder="why (kept in the activity log)">
+    </div>
+    <button type="submit" class="btn btn-primary">Apply</button>
+  </form>
+</section>
+{% endfor %}
+
+{% if q and not results %}
+<section class="card"><p class="empty">No member matched "{{ q }}". Try a shorter part of their name.</p></section>
+{% endif %}
+{% endblock %}
