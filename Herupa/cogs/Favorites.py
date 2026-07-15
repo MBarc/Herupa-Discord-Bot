@@ -159,6 +159,10 @@ class Favorites(commands.Cog):
             if recipient is None or recipient.bot:
                 continue
 
+            # Already in the channel the joiner joined? They'd see it, no DM needed.
+            if recipient.voice and recipient.voice.channel and recipient.voice.channel.id == channel.id:
+                continue
+
             # (1) Mutual: the recipient must also have the joiner favorited.
             if joiner_id not in self._favorite_ids(recipient_id):
                 continue
