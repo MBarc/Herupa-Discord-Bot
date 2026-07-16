@@ -58,6 +58,8 @@ class Help(commands.Cog):
                 "$poll · $pl": "Create a poll people can vote on.",
                 "$herupasay {text} · $hs": "Herupa joins your voice channel and says the text.",
                 "$mock": "Points you at the shop's mock item ($buy mock @member).",
+                "$birthday {date} · $bday": "Save your birthday (e.g. $birthday March 5); Herupa wishes you in general chat and it shows on the calendar.",
+                "$birthdays · $bdays": "See upcoming birthdays.",
                 "$avatarpic {@member} · $ap": "Show a member's avatar.",
             }),
             ("🔊 Voice & Rooms", {

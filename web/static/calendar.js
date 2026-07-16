@@ -6,6 +6,8 @@
   if (!body) return;
 
   var EVENTS = JSON.parse(document.getElementById("sched-data").textContent || "[]");
+  var bdayEl = document.getElementById("bday-data");
+  var BDAYS = bdayEl ? JSON.parse(bdayEl.textContent || "[]") : [];
   var MONTHS = ["January", "February", "March", "April", "May", "June", "July",
                 "August", "September", "October", "November", "December"];
 
@@ -138,6 +140,18 @@
         cell.appendChild(h);
         cell.dataset.holiday = hol.name;
         cell.dataset.holidayKey = hol.key;
+      }
+
+      if (inMonth) {
+        BDAYS.filter(function (b) {
+          return b.month === day.getMonth() + 1 && b.day === day.getDate();
+        }).forEach(function (b) {
+          var bc = document.createElement("span");
+          bc.className = "chip chip-birthday";
+          bc.textContent = "🎂 " + b.name;
+          bc.title = b.name + "'s birthday";
+          cell.appendChild(bc);
+        });
       }
 
       var todays = EVENTS.filter(function (ev) { return occursOn(ev, day); });

@@ -410,8 +410,17 @@ def schedule(request: Request):
                "channel": d["channel"], "content": (d.get("content") or "")[:200],
                "when": d["when"], "last": d["last"]} for d in docs]
     events_json = json.dumps(events).replace("<", "\\u003c")
+    members = all_members()
+    bdays = []
+    for b in mongo["birthdays"]["dates"].find():
+        info = members.get(b["_id"])
+        if info and info.get("bot"):
+            continue
+        bdays.append({"name": info["name"] if info else b.get("name", "member"),
+                      "month": b["month"], "day": b["day"]})
+    bdays_json = json.dumps(bdays).replace("<", "\\u003c")
     return page(request, "schedule.html", docs=docs, channels=messageable_channels(),
-                events_json=events_json)
+                events_json=events_json, bdays_json=bdays_json)
 
 
 @app.post("/schedule/create")
