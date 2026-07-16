@@ -1,4 +1,3 @@
-// DM thread: render from embedded JSON, then poll for new messages.
 // New-message dialog: live recipient search, then compose.
 (function () {
   var openBtn = document.getElementById("dm-new-btn");
@@ -58,6 +57,36 @@
   });
 })();
 
+// Render Discord-flavored markdown to safe HTML: escape first, pull code
+// spans out (so their contents aren't formatted) behind a control-char
+// marker that can't occur in a message, format the rest, then restore them.
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+function renderMarkdown(raw) {
+  var MARK = String.fromCharCode(0);
+  var codes = [];
+  function stash(html) { codes.push(html); return MARK + (codes.length - 1) + MARK; }
+  var text = escapeHtml(raw);
+  text = text.replace(/```([\s\S]*?)```/g, function (_, code) {
+    return stash('<pre class="md-pre">' + code.replace(/^\n/, "").replace(/\n$/, "") + "</pre>");
+  });
+  text = text.replace(/`([^`\n]+?)`/g, function (_, code) {
+    return stash('<code class="md-code">' + code + "</code>");
+  });
+  text = text.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
+  text = text.replace(/__([\s\S]+?)__/g, "<u>$1</u>");
+  text = text.replace(/~~([\s\S]+?)~~/g, "<s>$1</s>");
+  text = text.replace(/\*([^*\n]+?)\*/g, "<em>$1</em>");
+  text = text.replace(/(^|[^\w])_([^_\n]+?)_(?=[^\w]|$)/g, "$1<em>$2</em>");
+  text = text.replace(/(https?:\/\/[^\s<]+)/g,
+                      '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  return text.replace(new RegExp(MARK + "(\\d+)" + MARK, "g"),
+                      function (_, i) { return codes[+i]; });
+}
+
 (function () {
   var pane = document.getElementById("dm-thread");
   if (!pane) return;
@@ -75,7 +104,7 @@
       row.className = "dm-msg " + (m.her ? "dm-her" : "dm-them");
       var bubble = document.createElement("div");
       bubble.className = "dm-bubble";
-      bubble.textContent = m.content;
+      bubble.innerHTML = renderMarkdown(m.content);
       m.attachments.forEach(function (a) {
         var link = document.createElement("a");
         link.href = a.url;
