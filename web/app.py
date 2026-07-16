@@ -397,8 +397,6 @@ def dashboard(request: Request):
         members = online = 0
         gname, icon = "", ""
 
-    open_tickets = mongo["tickets"]["tickets"].count_documents({"status": "open"})
-    debts = mongo["mockdebt"]["pending"].count_documents({})
     upcoming = list(mongo["webui"]["scheduled"].find({"enabled": True})
                     .sort("next_fire", 1).limit(5))
     for s in upcoming:
@@ -409,8 +407,8 @@ def dashboard(request: Request):
         a["when"] = fmt_eastern(a.get("ts"))
 
     return page(request, "dashboard.html", checks=checks, members=members,
-                online=online, gname=gname, icon=icon, open_tickets=open_tickets,
-                debts=debts, upcoming=upcoming, recent=recent)
+                online=online, gname=gname, icon=icon,
+                upcoming=upcoming, recent=recent)
 
 
 # ------------------------- scheduler -------------------------
@@ -624,89 +622,6 @@ def levels_adjust(request: Request, user_id: str = Form(...), q: str = Form(""),
           f"{display_name(user_id)}: xp {old_xp} -> {new_xp}" + (f" ({note})" if note else ""))
     return back(f"/levels?q={urllib.parse.quote(q)}",
                 ok=f"Done. {display_name(user_id)} is now level {level_for_xp(new_xp)}.")
-
-
-# ------------------------- moderation -------------------------
-
-@app.get("/moderation", response_class=HTMLResponse)
-def moderation(request: Request):
-    if (r := guard(request)):
-        return r
-    cutoff = int(time.time()) - 3600
-    removals = list(mongo["moderation"]["deputy_removals"].find().sort("timestamp", -1).limit(20))
-    budgets = {}
-    for e in removals:
-        if e.get("timestamp", 0) >= cutoff:
-            budgets[e["deputy_id"]] = budgets.get(e["deputy_id"], 0) + 1
-    budget_rows = [{"name": display_name(d), "used": n, "limit": 3} for d, n in budgets.items()]
-    for e in removals:
-        e["deputy"] = display_name(e.get("deputy_id"))
-        e["target"] = display_name(e.get("target_id"))
-        e["when"] = fmt_eastern(datetime.utcfromtimestamp(e["timestamp"])) if e.get("timestamp") else ""
-
-    try:
-        rules = api("GET", f"/guilds/{GUILD_ID}/auto-moderation/rules")
-    except RuntimeError:
-        rules = []
-
-    debts = list(mongo["mockdebt"]["pending"].find())
-    for d in debts:
-        d["target"] = display_name(d.get("target_id"))
-        d["buyer"] = display_name(d.get("buyer_id"))
-        d["secs"] = int(d.get("remaining", 0))
-
-    feed = []
-    try:
-        for m in api("GET", f"/channels/{LAW_CHAT_ID}/messages?limit=15"):
-            text = m.get("content") or (m["embeds"][0].get("description", "")
-                                        if m.get("embeds") else "")
-            when = datetime.fromisoformat(m["timestamp"]).astimezone(EASTERN).strftime("%b %d, %I:%M %p")
-            feed.append({"author": m["author"]["username"], "text": text[:300], "when": when})
-    except (RuntimeError, ValueError, KeyError):
-        pass
-
-    return page(request, "moderation.html", budgets=budget_rows, removals=removals,
-                rules=rules, debts=debts, feed=feed)
-
-
-@app.post("/moderation/debt/forgive")
-def forgive_debt(request: Request, key: str = Form(...)):
-    if (r := guard(request)):
-        return r
-    doc = mongo["mockdebt"]["pending"].find_one_and_delete({"_id": key})
-    if doc:
-        audit("mockdebt.forgive", f"{display_name(doc.get('target_id'))} "
-                                  f"({int(doc.get('remaining', 0))}s)")
-    return back("/moderation", ok="Debt forgiven.")
-
-
-# ------------------------- tickets -------------------------
-
-@app.get("/tickets", response_class=HTMLResponse)
-def tickets(request: Request):
-    if (r := guard(request)):
-        return r
-    docs = list(mongo["tickets"]["tickets"].find().sort("number", -1).limit(60))
-    for t in docs:
-        t["opener"] = "Anonymous" if t.get("anonymous") else display_name(t.get("opener_id"))
-        t["claimer"] = display_name(t["claimed_by"]) if t.get("claimed_by") else ""
-        t["when"] = (fmt_eastern(datetime.utcfromtimestamp(t["opened_at"]))
-                     if t.get("opened_at") else "")
-        t["link"] = f"https://discord.com/channels/{GUILD_ID}/{t.get('channel_id')}"
-    open_docs = [t for t in docs if t.get("status") == "open"]
-    closed_docs = [t for t in docs if t.get("status") != "open"][:25]
-
-    transcripts = []
-    try:
-        for m in api("GET", f"/channels/{TICKET_LOG_CHANNEL}/messages?limit=25"):
-            for a in m.get("attachments", []):
-                when = datetime.fromisoformat(m["timestamp"]).astimezone(EASTERN).strftime("%b %d %Y")
-                transcripts.append({"name": a["filename"], "url": a["url"], "when": when})
-    except (RuntimeError, ValueError, KeyError):
-        pass
-
-    return page(request, "tickets.html", open_docs=open_docs,
-                closed_docs=closed_docs, transcripts=transcripts)
 
 
 # ------------------------- direct messages -------------------------
