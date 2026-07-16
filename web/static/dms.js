@@ -1,4 +1,63 @@
 // DM thread: render from embedded JSON, then poll for new messages.
+// New-message dialog: live recipient search, then compose.
+(function () {
+  var openBtn = document.getElementById("dm-new-btn");
+  var dialog = document.getElementById("dm-new");
+  if (!openBtn || !dialog) return;
+  var input = document.getElementById("dm-recipient");
+  var picker = document.getElementById("dm-picker");
+  var hidden = document.getElementById("dm-recipient-id");
+  var chosen = document.getElementById("dm-chosen");
+  var sendBtn = document.getElementById("dm-new-send");
+  var timer = null;
+
+  openBtn.addEventListener("click", function () {
+    hidden.value = ""; sendBtn.disabled = true;
+    chosen.hidden = true; input.hidden = false; picker.innerHTML = "";
+    input.value = "";
+    dialog.showModal();
+    input.focus();
+  });
+
+  function choose(id, name, avatar) {
+    hidden.value = id;
+    document.getElementById("dm-chosen-name").textContent = name;
+    document.getElementById("dm-chosen-avatar").src = avatar;
+    chosen.hidden = false; input.hidden = true; picker.innerHTML = "";
+    sendBtn.disabled = false;
+  }
+
+  document.getElementById("dm-clear").addEventListener("click", function () {
+    hidden.value = ""; sendBtn.disabled = true;
+    chosen.hidden = true; input.hidden = false; input.value = ""; input.focus();
+  });
+
+  input.addEventListener("input", function () {
+    clearTimeout(timer);
+    var q = input.value.trim();
+    if (q.length < 2) { picker.innerHTML = ""; return; }
+    timer = setTimeout(function () {
+      fetch("/dms/search?q=" + encodeURIComponent(q))
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (rows) {
+          picker.innerHTML = "";
+          rows.forEach(function (m) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "dm-pick-row";
+            b.innerHTML = '<img src="' + m.avatar + '" alt="" class="dm-avatar">';
+            var span = document.createElement("span");
+            span.textContent = m.name;
+            b.appendChild(span);
+            b.addEventListener("click", function () { choose(m.id, m.name, m.avatar); });
+            picker.appendChild(b);
+          });
+          if (!rows.length) picker.innerHTML = '<p class="empty">No match.</p>';
+        }).catch(function () {});
+    }, 250);
+  });
+})();
+
 (function () {
   var pane = document.getElementById("dm-thread");
   if (!pane) return;

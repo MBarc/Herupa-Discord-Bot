@@ -732,7 +732,7 @@ def dms(request: Request, u: str = "", q: str = ""):
                   "name": m.get("nick") or m["user"].get("global_name") or m["user"]["username"]}
                  for m in hits if not m["user"].get("bot")]
 
-    active, thread = None, []
+    convo, thread = None, []
     if u:
         info = members.get(u)
         name = (info["name"] if info else
@@ -741,12 +741,31 @@ def dms(request: Request, u: str = "", q: str = ""):
             thread = fetch_thread(u)
         except RuntimeError as e:
             return page(request, "dms.html", convos=convos, found=found, q=q,
-                        active=None, thread_json="[]",
+                        convo=None, thread_json="[]",
                         err=f"Could not open that DM: {e}")
-        active = {"id": u, "name": name, "avatar": _avatar_of(u, members)}
+        convo = {"id": u, "name": name, "avatar": _avatar_of(u, members)}
     thread_json = json.dumps(thread).replace("<", "\\u003c")
     return page(request, "dms.html", convos=convos, found=found, q=q,
-                active=active, thread_json=thread_json)
+                convo=convo, thread_json=thread_json)
+
+
+@app.get("/dms/search")
+def dms_search(request: Request, q: str = ""):
+    if not _session_ok(request):
+        return JSONResponse([], status_code=401)
+    if not q.strip():
+        return JSONResponse([])
+    try:
+        hits = api("GET", f"/guilds/{GUILD_ID}/members/search?"
+                   + urllib.parse.urlencode({"query": q.strip(), "limit": 8}))
+    except RuntimeError:
+        return JSONResponse([], status_code=502)
+    members = all_members()
+    return JSONResponse([
+        {"id": m["user"]["id"],
+         "name": m.get("nick") or m["user"].get("global_name") or m["user"]["username"],
+         "avatar": _avatar_of(m["user"]["id"], members)}
+        for m in hits if not m["user"].get("bot")])
 
 
 @app.get("/dms/thread")
