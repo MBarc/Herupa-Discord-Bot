@@ -170,6 +170,29 @@ def assignable_roles():
     return sorted(out, key=lambda r: -r["position"])
 
 
+def all_members():
+    """Every guild member (paginated REST list), cached five minutes."""
+    def fetch():
+        out, after = {}, "0"
+        while True:
+            batch = api("GET", f"/guilds/{GUILD_ID}/members?limit=1000&after={after}")
+            if not batch:
+                return out
+            for m in batch:
+                u = m["user"]
+                out[u["id"]] = {
+                    "name": m.get("nick") or u.get("global_name") or u["username"],
+                    "bot": u.get("bot", False),
+                    "avatar": (f"https://cdn.discordapp.com/avatars/{u['id']}/{u['avatar']}.png?size=32"
+                               if u.get("avatar") else
+                               "https://cdn.discordapp.com/embed/avatars/0.png"),
+                }
+            if len(batch) < 1000:
+                return out
+            after = batch[-1]["user"]["id"]
+    return cached("all_members", 300, fetch)
+
+
 _NAMES = {}
 
 def display_name(user_id):
@@ -460,7 +483,28 @@ def levels(request: Request, q: str = ""):
                 "to_next": ceil - xp,
                 "streak": daily.get("streak", 0), "last_daily": daily.get("last", "never"),
             })
-    return page(request, "levels.html", q=q, results=results)
+    # full roster, leaderboard-ordered
+    members = all_members()
+    streaks = {d["_id"]: d.get("streak", 0)
+               for d in mongo["leveling"]["daily"].find({}, {"streak": 1})}
+    roster = []
+    for doc in mongo["leveling"]["members"].find({}, {"xp": 1}):
+        uid = doc["_id"]
+        xp = int(doc.get("xp", 0))
+        info = members.get(uid)
+        if info and info["bot"]:
+            continue
+        roster.append({
+            "id": uid, "xp": xp, "level": level_for_xp(xp),
+            "streak": streaks.get(uid, 0),
+            "name": info["name"] if info else f"left the server ({uid})",
+            "avatar": info["avatar"] if info else "https://cdn.discordapp.com/embed/avatars/0.png",
+            "gone": info is None,
+        })
+    roster.sort(key=lambda r: -r["xp"])
+    for i, r_ in enumerate(roster, 1):
+        r_["rank"] = i
+    return page(request, "levels.html", q=q, results=results, roster=roster)
 
 
 @app.post("/levels/adjust")

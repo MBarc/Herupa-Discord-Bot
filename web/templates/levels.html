@@ -56,4 +56,27 @@
 {% if q and not results %}
 <section class="card"><p class="empty">No member matched "{{ q }}". Try a shorter part of their name.</p></section>
 {% endif %}
+
+<section class="card">
+  <h2>Everyone</h2>
+  {% if roster %}
+  <table>
+    <thead><tr><th>#</th><th>Member</th><th>Level</th><th>XP</th><th>Daily streak</th><th></th></tr></thead>
+    <tbody>
+    {% for m in roster %}
+      <tr class="{{ 'row-muted' if m.gone }}">
+        <td class="mono">{{ m.rank }}</td>
+        <td class="roster-member"><img src="{{ m.avatar }}" alt="" loading="lazy" class="roster-avatar">{{ m.name }}</td>
+        <td><span class="level-pill">Lv {{ m.level }}</span></td>
+        <td class="mono">{{ "{:,}".format(m.xp) }}</td>
+        <td class="mono">{{ m.streak if m.streak else "" }}</td>
+        <td>{% if not m.gone %}<a class="btn btn-ghost btn-small" href="/levels?q={{ m.name|urlencode }}">Manage</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No leveling data yet.</p>
+  {% endif %}
+</section>
 {% endblock %}
