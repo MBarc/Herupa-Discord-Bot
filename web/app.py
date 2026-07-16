@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import subprocess
 import time
@@ -717,11 +718,19 @@ def dm_channel_id(user_id):
                               {"recipient_id": str(user_id)})["id"])
 
 
+def resolve_mentions(content, msg):
+    """Turn <@id> tokens into readable @names using the message's mention list."""
+    names = {u["id"]: (u.get("global_name") or u["username"])
+             for u in msg.get("mentions", [])}
+    return re.sub(r"<@!?(\d+)>",
+                  lambda mo: "@" + names.get(mo.group(1), "user"), content)
+
+
 def fetch_thread(user_id, limit=50):
     msgs = api("GET", f"/channels/{dm_channel_id(user_id)}/messages?limit={limit}")
     out = []
     for m in reversed(msgs):
-        content = m.get("content") or ""
+        content = resolve_mentions(m.get("content") or "", m)
         if not content and m.get("embeds"):
             e = m["embeds"][0]
             content = "[embed] " + (e.get("title") or e.get("description") or "")[:200]

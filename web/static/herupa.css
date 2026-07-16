@@ -314,6 +314,23 @@ input[type="checkbox"] { width: auto; accent-color: var(--blossom); }
   .dm-main { min-height: 50vh; }
 }
 
+/* ---------- @mention autocomplete ---------- */
+.mention-menu {
+  position: absolute; z-index: 60; background: var(--hill);
+  border: 1px solid var(--border); border-radius: 10px; padding: 4px;
+  box-shadow: 0 12px 34px rgba(15, 15, 25, .55); max-height: 240px; overflow-y: auto;
+}
+.mention-menu[hidden] { display: none; }
+.mention-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  background: transparent; border: none; color: var(--paper);
+  padding: 7px 9px; border-radius: 7px; font: 14px var(--body); cursor: pointer;
+}
+.mention-item.sel, .mention-item:hover { background: var(--hill-2); }
+.mention-item img { width: 24px; height: 24px; border-radius: 50%; flex: none; }
+/* rendered mentions in DM bubbles */
+.dm-bubble .mention, .dp-content .mention { color: var(--blossom-deep); font-weight: 500; }
+
 /* ---------- login ---------- */
 .login-body { background: linear-gradient(180deg, #3f4257 0%, #565a6e 55%, #4a4d60 100%); overflow: hidden; min-height: 100vh; }
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; position: relative; z-index: 2; }

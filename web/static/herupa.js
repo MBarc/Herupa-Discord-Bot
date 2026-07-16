@@ -38,8 +38,15 @@ document.querySelectorAll("input[data-toggles]").forEach(function (box) {
   var el = {};
   ids.forEach(function (i) { el[i] = document.getElementById(i); });
 
+  function showMentions(text) {
+    var names = window.MENTION_NAMES || {};
+    return text.replace(/<@!?(\d+)>/g, function (_, id) {
+      return "@" + (names[id] || "user");
+    });
+  }
+
   function render() {
-    document.getElementById("p-content").textContent = content.value;
+    document.getElementById("p-content").textContent = showMentions(content.value);
     var on = el["c-use-embed"].checked &&
              (el["c-etitle"].value.trim() || el["c-edesc"].value.trim());
     document.getElementById("p-embed").hidden = !on;
