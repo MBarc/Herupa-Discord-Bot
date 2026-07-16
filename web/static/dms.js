@@ -183,6 +183,7 @@ function renderMarkdown(raw) {
   function autoGrow() {
     input.style.height = "auto";
     input.style.height = Math.min(input.scrollHeight, 160) + "px";
+    input.style.overflowY = input.scrollHeight > 160 ? "auto" : "hidden";
   }
   input.addEventListener("input", autoGrow);
   autoGrow();
