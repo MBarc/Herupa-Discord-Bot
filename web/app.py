@@ -7,6 +7,8 @@ crash can never take Herupa down. Auth is a single admin password from
 """
 
 import calendar
+import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -50,15 +52,37 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE, "static")), name="
 templates = Jinja2Templates(directory=os.path.join(BASE, "templates"))
 
 # ------------------------- auth -------------------------
+# Sessions are stateless: the cookie is "<expiry>.<hmac>", validated by
+# signature so it survives a service restart (no server-side session store to
+# wipe). The signing secret is stable across restarts (env, with a
+# password-derived fallback), so a deploy no longer logs the admin out.
 
-SESSIONS = {}          # token -> expiry epoch
 LOGIN_FAILS = {}       # ip -> [fail epochs]
 SESSION_TTL = 7 * 86400
+SECRET = (os.environ.get("HERUPA_WEB_SECRET") or ("hs-fallback:" + PASSWORD)).encode()
+
+
+def _make_token(ttl=SESSION_TTL):
+    exp = str(int(time.time()) + ttl)
+    sig = hmac.new(SECRET, exp.encode(), hashlib.sha256).hexdigest()
+    return exp + "." + sig
+
+
+def _valid_token(tok):
+    if not tok or "." not in tok:
+        return False
+    exp, sig = tok.rsplit(".", 1)
+    good = hmac.new(SECRET, exp.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, good):
+        return False
+    try:
+        return int(exp) > time.time()
+    except ValueError:
+        return False
 
 
 def _session_ok(request):
-    tok = request.cookies.get("hs")
-    return bool(tok) and SESSIONS.get(tok, 0) > time.time()
+    return _valid_token(request.cookies.get("hs"))
 
 
 def guard(request):
@@ -83,16 +107,13 @@ def login(request: Request, password: str = Form("")):
         fails.append(time.time())
         LOGIN_FAILS[ip] = fails
         return RedirectResponse("/login?err=That+password+is+not+right.", status_code=303)
-    tok = secrets.token_urlsafe(32)
-    SESSIONS[tok] = time.time() + SESSION_TTL
     resp = RedirectResponse("/", status_code=303)
-    resp.set_cookie("hs", tok, max_age=SESSION_TTL, httponly=True, samesite="lax")
+    resp.set_cookie("hs", _make_token(), max_age=SESSION_TTL, httponly=True, samesite="lax")
     return resp
 
 
 @app.get("/logout")
 def logout(request: Request):
-    SESSIONS.pop(request.cookies.get("hs", ""), None)
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie("hs")
     return resp
