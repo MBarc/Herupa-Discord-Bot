@@ -97,6 +97,10 @@ h2 { font-family: var(--display); font-weight: 700; font-size: 16px; margin: 0 0
 /* ---------- tables, feeds ---------- */
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; color: var(--moon); font-weight: 500; font-size: 12.5px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+th.th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+th.th-sort:hover { color: var(--paper); }
+th.sort-asc::after { content: " ▲"; color: var(--blossom); font-size: 10px; }
+th.sort-desc::after { content: " ▼"; color: var(--blossom); font-size: 10px; }
 td { padding: 8px 10px; border-bottom: 1px solid #383b4d; vertical-align: middle; }
 tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--hill-2); }

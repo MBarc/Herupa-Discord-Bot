@@ -60,16 +60,16 @@
 <section class="card">
   <h2>Everyone</h2>
   {% if roster %}
-  <table>
-    <thead><tr><th>#</th><th>Member</th><th>Level</th><th>XP</th><th>Daily streak</th><th></th></tr></thead>
+  <table class="sortable">
+    <thead><tr><th>#</th><th>Member</th><th>Level</th><th>XP</th><th>Daily streak</th><th class="no-sort"></th></tr></thead>
     <tbody>
     {% for m in roster %}
       <tr class="{{ 'row-muted' if m.gone }}">
-        <td class="mono">{{ m.rank }}</td>
-        <td class="roster-member"><img src="{{ m.avatar }}" alt="" loading="lazy" class="roster-avatar">{{ m.name }}</td>
-        <td><span class="level-pill">Lv {{ m.level }}</span></td>
-        <td class="mono">{{ "{:,}".format(m.xp) }}</td>
-        <td class="mono">{{ m.streak if m.streak else "" }}</td>
+        <td class="mono" data-sort="{{ m.rank }}">{{ m.rank }}</td>
+        <td class="roster-member" data-sort="{{ m.name|lower }}"><img src="{{ m.avatar }}" alt="" loading="lazy" class="roster-avatar">{{ m.name }}</td>
+        <td data-sort="{{ m.level }}"><span class="level-pill">Lv {{ m.level }}</span></td>
+        <td class="mono" data-sort="{{ m.xp }}">{{ "{:,}".format(m.xp) }}</td>
+        <td class="mono" data-sort="{{ m.streak }}">{{ m.streak if m.streak else "" }}</td>
         <td>{% if not m.gone %}<a class="btn btn-ghost btn-small" href="/levels?q={{ m.name|urlencode }}">Manage</a>{% endif %}</td>
       </tr>
     {% endfor %}
