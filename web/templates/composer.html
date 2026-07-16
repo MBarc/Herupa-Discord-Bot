@@ -12,7 +12,7 @@
     <form method="post" action="/composer/send" class="form" id="composer-form">
       <label for="c-channel">Channel</label>
       <select id="c-channel" name="channel_id" required>
-        {% for c in channels %}<option value="{{ c.id }}">#{{ c.name }}</option>{% endfor %}
+        {% for c in channels %}<option value="{{ c.id }}">{{ c.label }}</option>{% endfor %}
       </select>
 
       <label for="c-content">Message</label>

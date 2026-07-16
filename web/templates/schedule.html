@@ -3,86 +3,131 @@
 {% block content %}
 <header class="page-head">
   <h1>Message schedule</h1>
-  <p class="page-sub">Herupa sends these on time, even holiday mornings. All times are Eastern.</p>
+  <p class="page-sub">Click a day to schedule a message for it. Holidays are marked for every year. All times are Eastern.</p>
 </header>
 
-<div class="two-col">
-  <section class="card">
-    <h2>Schedule a message</h2>
-    <form method="post" action="/schedule/create" class="form">
-      <label for="s-name">Name</label>
-      <input id="s-name" name="name" placeholder="Merry Christmas" required>
+<section class="card cal-card">
+  <div class="cal-head">
+    <h2 id="cal-title">Month</h2>
+    <div class="cal-nav">
+      <button type="button" class="btn btn-ghost btn-small" id="cal-today">Today</button>
+      <button type="button" class="btn btn-ghost btn-small" id="cal-prev" aria-label="Previous month">‹</button>
+      <button type="button" class="btn btn-ghost btn-small" id="cal-next" aria-label="Next month">›</button>
+    </div>
+  </div>
+  <div class="cal-wrap">
+    <div class="cal-grid cal-days" aria-hidden="true">
+      <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+    </div>
+    <div class="cal-grid" id="cal-body"></div>
+  </div>
+</section>
 
-      <label for="s-channel">Channel</label>
-      <select id="s-channel" name="channel_id" required>
-        {% for c in channels %}<option value="{{ c.id }}">#{{ c.name }}</option>{% endfor %}
-      </select>
+<section class="card">
+  <h2>All scheduled messages</h2>
+  {% if docs %}
+  <table>
+    <thead><tr><th>Name</th><th>Channel</th><th>Next send</th><th>Repeat</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for d in docs %}
+      <tr class="{{ 'row-muted' if not d.enabled }}">
+        <td>{{ d.name }}</td>
+        <td>{{ d.channel }}</td>
+        <td class="mono">{{ d.when if d.enabled else (("sent " + d.last) if d.last else "") }}</td>
+        <td>{{ d.repeat }}</td>
+        <td>{{ "on" if d.enabled else ("sent" if d.repeat == "none" and d.last else "paused") }}</td>
+        <td class="row-actions">
+          <form method="post" action="/schedule/toggle">
+            <input type="hidden" name="doc_id" value="{{ d.id }}">
+            <button class="btn btn-ghost btn-small">{{ "Pause" if d.enabled else "Enable" }}</button>
+          </form>
+          <form method="post" action="/schedule/delete">
+            <input type="hidden" name="doc_id" value="{{ d.id }}">
+            <button class="btn btn-danger btn-small">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">Nothing scheduled yet. Click a day on the calendar to make the first one.</p>
+  {% endif %}
+</section>
 
-      <div class="form-row">
-        <div>
-          <label for="s-wall">Send at</label>
-          <input id="s-wall" name="wall" type="datetime-local" required>
-        </div>
-        <div>
-          <label for="s-repeat">Repeat</label>
-          <select id="s-repeat" name="repeat">
-            <option value="none">Does not repeat</option>
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="yearly">Yearly</option>
-          </select>
-        </div>
+<dialog id="compose" class="modal">
+  <form method="post" action="/schedule/create" class="form">
+    <div class="modal-head">
+      <h2 id="compose-title">Schedule a message</h2>
+      <span id="compose-holiday" class="holiday-flag"></span>
+    </div>
+    <label for="s-name">Name</label>
+    <input id="s-name" name="name" placeholder="Merry Christmas" required>
+
+    <div class="form-row">
+      <div>
+        <label for="s-channel">Channel</label>
+        <select id="s-channel" name="channel_id" required>
+          {% for c in channels %}<option value="{{ c.id }}">{{ c.label }}</option>{% endfor %}
+        </select>
       </div>
-
-      <label for="s-content">Message</label>
-      <textarea id="s-content" name="content" rows="4" placeholder="Merry Christmas, Chill Club! 🎄"></textarea>
-
-      <label class="check"><input type="checkbox" name="use_embed" value="1" data-toggles="s-embed"> Add an embed</label>
-      <div id="s-embed" class="embed-fields" hidden>
-        <label for="s-etitle">Embed title</label>
-        <input id="s-etitle" name="embed_title">
-        <label for="s-edesc">Embed text</label>
-        <textarea id="s-edesc" name="embed_description" rows="3"></textarea>
-        <label for="s-ecolor">Color</label>
-        <input id="s-ecolor" name="embed_color" type="color" value="#FFB7C5">
+      <div>
+        <label for="s-wall">Send at</label>
+        <input id="s-wall" name="wall" type="datetime-local" required>
       </div>
+    </div>
 
-      <button type="submit" class="btn btn-primary">Schedule it</button>
+    <label for="s-repeat">Repeat</label>
+    <select id="s-repeat" name="repeat">
+      <option value="none">Does not repeat</option>
+      <option value="daily">Daily</option>
+      <option value="weekly">Weekly</option>
+      <option value="monthly">Monthly</option>
+      <option value="yearly">Yearly</option>
+    </select>
+
+    <label for="s-content">Message</label>
+    <textarea id="s-content" name="content" rows="4" placeholder="What should Herupa say?"></textarea>
+
+    <label class="check"><input type="checkbox" name="use_embed" value="1" data-toggles="s-embed"> Add an embed</label>
+    <div id="s-embed" class="embed-fields" hidden>
+      <label for="s-etitle">Embed title</label>
+      <input id="s-etitle" name="embed_title">
+      <label for="s-edesc">Embed text</label>
+      <textarea id="s-edesc" name="embed_description" rows="3"></textarea>
+      <label for="s-ecolor">Color</label>
+      <input id="s-ecolor" name="embed_color" type="color" value="#FFB7C5">
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-closes="compose">Cancel</button>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="manage" class="modal">
+  <div class="modal-head">
+    <h2 id="manage-title"></h2>
+  </div>
+  <p id="manage-meta" class="hint"></p>
+  <p id="manage-content" class="manage-content"></p>
+  <div class="modal-actions">
+    <button type="button" class="btn btn-ghost" data-closes="manage">Close</button>
+    <form method="post" action="/schedule/toggle">
+      <input type="hidden" name="doc_id" id="manage-toggle-id">
+      <button class="btn btn-ghost" id="manage-toggle-btn">Pause</button>
     </form>
-  </section>
+    <form method="post" action="/schedule/delete">
+      <input type="hidden" name="doc_id" id="manage-delete-id">
+      <button class="btn btn-danger">Delete</button>
+    </form>
+  </div>
+</dialog>
 
-  <section class="card">
-    <h2>Scheduled</h2>
-    {% if docs %}
-    <table>
-      <thead><tr><th>Name</th><th>Channel</th><th>Next send</th><th>Repeat</th><th>Status</th><th></th></tr></thead>
-      <tbody>
-      {% for d in docs %}
-        <tr class="{{ 'row-muted' if not d.enabled }}">
-          <td>{{ d.name }}</td>
-          <td>#{{ d.channel }}</td>
-          <td class="mono">{{ d.when if d.enabled else (("sent " + d.last) if d.last else "") }}</td>
-          <td>{{ d.repeat }}</td>
-          <td>{{ "on" if d.enabled else ("sent" if d.repeat == "none" and d.last else "paused") }}</td>
-          <td class="row-actions">
-            <form method="post" action="/schedule/toggle">
-              <input type="hidden" name="doc_id" value="{{ d.id }}">
-              <button class="btn btn-ghost btn-small">{{ "Pause" if d.enabled else "Enable" }}</button>
-            </form>
-            <form method="post" action="/schedule/delete">
-              <input type="hidden" name="doc_id" value="{{ d.id }}">
-              <button class="btn btn-danger btn-small">Delete</button>
-            </form>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p class="empty">Nothing here yet. The form on the left schedules the first one.</p>
-    {% endif %}
-  </section>
-</div>
+<script id="sched-data" type="application/json">{{ events_json|safe }}</script>
 {% endblock %}
-{% block scripts %}<script src="/static/herupa.js"></script>{% endblock %}
+{% block scripts %}
+<script src="/static/herupa.js"></script>
+<script src="/static/calendar.js"></script>
+{% endblock %}

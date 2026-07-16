@@ -127,10 +127,20 @@ def cached(key, ttl, fn):
     return val
 
 
+def guild_channels():
+    return cached("channels", 60, lambda: api("GET", f"/guilds/{GUILD_ID}/channels"))
+
+
 def text_channels():
-    chans = cached("channels", 60, lambda: api("GET", f"/guilds/{GUILD_ID}/channels"))
-    out = [c for c in chans if c["type"] in (0, 5)]
+    out = [dict(c, label="#" + c["name"]) for c in guild_channels() if c["type"] in (0, 5)]
     return sorted(out, key=lambda c: c["position"])
+
+
+def messageable_channels():
+    """Text channels plus voice and stage chats (they take messages too)."""
+    voice = [dict(c, label="🔊 " + c["name"])
+             for c in guild_channels() if c["type"] in (2, 13)]
+    return text_channels() + sorted(voice, key=lambda c: c["position"])
 
 
 def guild_roles():
@@ -310,13 +320,19 @@ def schedule(request: Request):
     if (r := guard(request)):
         return r
     docs = list(mongo["webui"]["scheduled"].find().sort([("enabled", -1), ("next_fire", 1)]))
-    chan_names = {c["id"]: c["name"] for c in text_channels()}
+    chan_labels = {c["id"]: c["label"] for c in messageable_channels()}
     for d in docs:
         d["id"] = str(d["_id"])
         d["when"] = fmt_eastern(d.get("next_fire"))
         d["last"] = fmt_eastern(d.get("last_fired"))
-        d["channel"] = chan_names.get(str(d.get("channel_id")), str(d.get("channel_id")))
-    return page(request, "schedule.html", docs=docs, channels=text_channels())
+        d["channel"] = chan_labels.get(str(d.get("channel_id")), str(d.get("channel_id")))
+    events = [{"id": d["id"], "name": d["name"], "wall": d["wall"],
+               "repeat": d.get("repeat", "none"), "enabled": d["enabled"],
+               "channel": d["channel"], "content": (d.get("content") or "")[:200],
+               "when": d["when"], "last": d["last"]} for d in docs]
+    events_json = json.dumps(events).replace("<", "\\u003c")
+    return page(request, "schedule.html", docs=docs, channels=messageable_channels(),
+                events_json=events_json)
 
 
 @app.post("/schedule/create")
@@ -378,7 +394,7 @@ def schedule_delete(request: Request, doc_id: str = Form(...)):
 def composer(request: Request):
     if (r := guard(request)):
         return r
-    return page(request, "composer.html", channels=text_channels())
+    return page(request, "composer.html", channels=messageable_channels())
 
 
 @app.post("/composer/send")
@@ -406,9 +422,10 @@ def composer_send(request: Request, channel_id: str = Form(...), content: str = 
         api("POST", f"/channels/{channel_id}/messages", body)
     except RuntimeError as e:
         return back("/composer", err=str(e))
-    name = next((c["name"] for c in text_channels() if c["id"] == channel_id), channel_id)
-    audit("composer.send", f"-> #{name}")
-    return back("/composer", ok=f"Sent to #{name}.")
+    label = next((c["label"] for c in messageable_channels() if c["id"] == channel_id),
+                 channel_id)
+    audit("composer.send", f"-> {label}")
+    return back("/composer", ok=f"Sent to {label}.")
 
 
 # ------------------------- levels -------------------------
