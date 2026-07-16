@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Direct messages{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Direct messages</h1>
+  <p class="page-sub">Herupa's inbox. Read her conversations and reply as her.</p>
+</header>
+
+<div class="dm-layout">
+  <section class="card dm-sidebar">
+    <form method="get" action="/dms" class="dm-search">
+      <label class="sr-only" for="dm-q">Start a conversation</label>
+      <input id="dm-q" name="q" value="{{ q }}" placeholder="Find a member...">
+      {% if active %}<input type="hidden" name="u" value="{{ active.id }}">{% endif %}
+    </form>
+    {% if found %}
+    <div class="dm-found">
+      {% for f in found %}
+      <a class="dm-found-row" href="/dms?u={{ f.id }}">💬 {{ f.name }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if convos %}
+    <div class="dm-list">
+      {% for c in convos %}
+      <a class="dm-row {{ 'dm-row-active' if active and active.id == c._id }}" href="/dms?u={{ c._id }}">
+        <img src="{{ c.avatar }}" alt="" class="dm-avatar" loading="lazy">
+        <span class="dm-row-text">
+          <span class="dm-row-name">{{ c.display }}</span>
+          <span class="dm-row-preview">{{ c.preview }}</span>
+        </span>
+        <span class="dm-row-time">{{ c.when.split(",")[0] }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">Conversations appear here as people DM Herupa. Use the search above to start one.</p>
+    {% endif %}
+  </section>
+
+  <section class="card dm-main">
+    {% if active %}
+    <div class="dm-head">
+      <img src="{{ active.avatar }}" alt="" class="dm-avatar">
+      <strong>{{ active.name }}</strong>
+      <span class="hint">refreshes automatically</span>
+    </div>
+    <div class="dm-thread" id="dm-thread" data-user="{{ active.id }}"></div>
+    <form method="post" action="/dms/send" class="dm-composer">
+      <input type="hidden" name="user_id" value="{{ active.id }}">
+      <label class="sr-only" for="dm-input">Message as Herupa</label>
+      <textarea id="dm-input" name="content" rows="2"
+                placeholder="Message {{ active.name }} as Herupa..." required></textarea>
+      <button type="submit" class="btn btn-primary">Send</button>
+    </form>
+    {% else %}
+    <p class="empty dm-empty">Pick a conversation on the left, or search for a member to start one.</p>
+    {% endif %}
+  </section>
+</div>
+
+<script id="thread-data" type="application/json">{{ thread_json|safe }}</script>
+{% endblock %}
+{% block scripts %}<script src="/static/dms.js"></script>{% endblock %}

@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pymongo import MongoClient
@@ -673,6 +673,111 @@ def tickets(request: Request):
 
     return page(request, "tickets.html", open_docs=open_docs,
                 closed_docs=closed_docs, transcripts=transcripts)
+
+
+# ------------------------- direct messages -------------------------
+
+def dm_channel_id(user_id):
+    """Herupa's DM channel with this user (create-or-get), cached an hour."""
+    return cached(f"dm:{user_id}", 3600,
+                  lambda: api("POST", "/users/@me/channels",
+                              {"recipient_id": str(user_id)})["id"])
+
+
+def fetch_thread(user_id, limit=50):
+    msgs = api("GET", f"/channels/{dm_channel_id(user_id)}/messages?limit={limit}")
+    out = []
+    for m in reversed(msgs):
+        content = m.get("content") or ""
+        if not content and m.get("embeds"):
+            e = m["embeds"][0]
+            content = "[embed] " + (e.get("title") or e.get("description") or "")[:200]
+        out.append({
+            "id": m["id"],
+            "her": m["author"]["id"] == HERUPA_ID,
+            "content": content,
+            "attachments": [{"name": a["filename"], "url": a["url"]}
+                            for a in m.get("attachments", [])],
+            "when": datetime.fromisoformat(m["timestamp"]).astimezone(EASTERN)
+                    .strftime("%b %d, %I:%M %p"),
+        })
+    return out
+
+
+def _avatar_of(uid, members):
+    info = members.get(uid)
+    return info["avatar"] if info else "https://cdn.discordapp.com/embed/avatars/0.png"
+
+
+@app.get("/dms", response_class=HTMLResponse)
+def dms(request: Request, u: str = "", q: str = ""):
+    if (r := guard(request)):
+        return r
+    members = all_members()
+    convos = list(mongo["dms"]["conversations"].find().sort("last_ts", -1).limit(60))
+    for c in convos:
+        info = members.get(c["_id"])
+        c["display"] = info["name"] if info else c.get("name", c["_id"])
+        c["avatar"] = _avatar_of(c["_id"], members)
+        c["when"] = fmt_eastern(c.get("last_ts"))
+
+    found = []
+    if q.strip():
+        try:
+            hits = api("GET", f"/guilds/{GUILD_ID}/members/search?"
+                       + urllib.parse.urlencode({"query": q.strip(), "limit": 8}))
+        except RuntimeError:
+            hits = []
+        found = [{"id": m["user"]["id"],
+                  "name": m.get("nick") or m["user"].get("global_name") or m["user"]["username"]}
+                 for m in hits if not m["user"].get("bot")]
+
+    active, thread = None, []
+    if u:
+        info = members.get(u)
+        name = (info["name"] if info else
+                next((c["display"] for c in convos if c["_id"] == u), f"user {u}"))
+        try:
+            thread = fetch_thread(u)
+        except RuntimeError as e:
+            return page(request, "dms.html", convos=convos, found=found, q=q,
+                        active=None, thread_json="[]",
+                        err=f"Could not open that DM: {e}")
+        active = {"id": u, "name": name, "avatar": _avatar_of(u, members)}
+    thread_json = json.dumps(thread).replace("<", "\\u003c")
+    return page(request, "dms.html", convos=convos, found=found, q=q,
+                active=active, thread_json=thread_json)
+
+
+@app.get("/dms/thread")
+def dms_thread(request: Request, u: str):
+    if not _session_ok(request):
+        return JSONResponse([], status_code=401)
+    try:
+        return JSONResponse(fetch_thread(u))
+    except RuntimeError:
+        return JSONResponse([], status_code=502)
+
+
+@app.post("/dms/send")
+def dms_send(request: Request, user_id: str = Form(...), content: str = Form(...)):
+    if (r := guard(request)):
+        return r
+    if not content.strip():
+        return back(f"/dms?u={user_id}", err="Write something first.")
+    try:
+        api("POST", f"/channels/{dm_channel_id(user_id)}/messages",
+            {"content": content.strip()})
+    except RuntimeError as e:
+        return back(f"/dms?u={user_id}", err=str(e))
+    name = display_name(user_id)
+    mongo["dms"]["conversations"].update_one(
+        {"_id": str(user_id)},
+        {"$set": {"name": name, "last_ts": datetime.utcnow(),
+                  "preview": content.strip()[:80]}},
+        upsert=True)
+    audit("dms.send", f"-> {name}")
+    return back(f"/dms?u={user_id}")
 
 
 # ------------------------- panels -------------------------
