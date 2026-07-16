@@ -34,7 +34,7 @@
         <td>{{ d.name }}</td>
         <td>{{ d.channel }}</td>
         <td class="mono">{{ d.when if d.enabled else (("sent " + d.last) if d.last else "") }}</td>
-        <td>{{ d.repeat }}</td>
+        <td>{{ d.repeat_label }}</td>
         <td>{{ "on" if d.enabled else ("sent" if d.repeat == "none" and d.last else "paused") }}</td>
         <td class="row-actions">
           <form method="post" action="/schedule/toggle">

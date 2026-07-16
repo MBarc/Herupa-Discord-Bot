@@ -228,6 +228,49 @@ def level_for_xp(total_xp):
 
 # ------------------------- schedule helpers -------------------------
 
+from datetime import date
+
+
+def _nth_weekday(year, month, weekday, n):
+    first = date(year, month, 1).weekday()
+    return date(year, month, 1 + ((weekday - first) % 7) + (n - 1) * 7)
+
+
+def _last_weekday(year, month, weekday):
+    last = date(year, month, calendar.monthrange(year, month)[1])
+    return last - timedelta(days=(last.weekday() - weekday) % 7)
+
+
+def _easter(y):
+    a, b, c = y % 19, y // 100, y % 100
+    d, e, f = b // 4, b % 4, (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    return date(y, (h + l - 7 * m + 114) // 31, ((h + l - 7 * m + 114) % 31) + 1)
+
+
+HOLIDAY_RULES = {
+    "mlk":          ("MLK Day",         lambda y: _nth_weekday(y, 1, 0, 3)),
+    "presidents":   ("Presidents' Day", lambda y: _nth_weekday(y, 2, 0, 3)),
+    "easter":       ("Easter",          _easter),
+    "mothersday":   ("Mother's Day",    lambda y: _nth_weekday(y, 5, 6, 2)),
+    "memorial":     ("Memorial Day",    lambda y: _last_weekday(y, 5, 0)),
+    "fathersday":   ("Father's Day",    lambda y: _nth_weekday(y, 6, 6, 3)),
+    "labor":        ("Labor Day",       lambda y: _nth_weekday(y, 9, 0, 1)),
+    "thanksgiving": ("Thanksgiving",    lambda y: _nth_weekday(y, 11, 3, 4)),
+}
+
+
+def repeat_label(repeat):
+    if repeat.startswith("holiday:"):
+        rule = HOLIDAY_RULES.get(repeat.split(":", 1)[1])
+        return f"every {rule[0]}" if rule else repeat
+    return repeat
+
+
 def parse_wall(wall):
     return datetime.strptime(wall, "%Y-%m-%dT%H:%M").replace(tzinfo=EASTERN)
 
@@ -250,6 +293,17 @@ def advance_wall(dt, repeat):
 
 def next_fire_utc(wall, repeat, after=None):
     after = after or datetime.now(timezone.utc)
+    if repeat.startswith("holiday:"):
+        rule = HOLIDAY_RULES.get(repeat.split(":", 1)[1])
+        if rule is None:
+            return None
+        t = parse_wall(wall)
+        for year in range(after.astimezone(EASTERN).year, after.astimezone(EASTERN).year + 3):
+            d = rule[1](year)
+            dt = datetime(d.year, d.month, d.day, t.hour, t.minute, tzinfo=EASTERN)
+            if dt.astimezone(timezone.utc) >= after:
+                return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return None
     dt = parse_wall(wall)
     while dt.astimezone(timezone.utc) < after:
         dt = advance_wall(dt, repeat)
@@ -327,6 +381,7 @@ def dashboard(request: Request):
                     .sort("next_fire", 1).limit(5))
     for s in upcoming:
         s["when"] = fmt_eastern(s.get("next_fire"))
+        s["repeat"] = repeat_label(s.get("repeat", "none"))
     recent = list(mongo["webui"]["audit"].find().sort("ts", -1).limit(6))
     for a in recent:
         a["when"] = fmt_eastern(a.get("ts"))
@@ -349,6 +404,7 @@ def schedule(request: Request):
         d["when"] = fmt_eastern(d.get("next_fire"))
         d["last"] = fmt_eastern(d.get("last_fired"))
         d["channel"] = chan_labels.get(str(d.get("channel_id")), str(d.get("channel_id")))
+        d["repeat_label"] = repeat_label(d.get("repeat", "none"))
     events = [{"id": d["id"], "name": d["name"], "wall": d["wall"],
                "repeat": d.get("repeat", "none"), "enabled": d["enabled"],
                "channel": d["channel"], "content": (d.get("content") or "")[:200],

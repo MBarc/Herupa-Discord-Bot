@@ -9,7 +9,7 @@
 #    next_fire: datetime (UTC), enabled: bool, last_fired: datetime|None}
 
 import calendar
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import discord
@@ -18,6 +18,45 @@ from discord.ext import commands, tasks
 from tools.HerupaMongo import HerupaMongo
 
 EASTERN = ZoneInfo("America/New_York")
+
+
+# --- floating holidays (repeat="holiday:<key>" recomputes the date yearly) ---
+
+def _nth_weekday(year, month, weekday, n):
+    """The n-th <weekday> of a month; weekday is Python's Monday=0."""
+    first = date(year, month, 1).weekday()
+    return date(year, month, 1 + ((weekday - first) % 7) + (n - 1) * 7)
+
+
+def _last_weekday(year, month, weekday):
+    last = date(year, month, calendar.monthrange(year, month)[1])
+    return last - timedelta(days=(last.weekday() - weekday) % 7)
+
+
+def _easter(y):
+    """Western Easter (anonymous Gregorian computus)."""
+    a, b, c = y % 19, y // 100, y % 100
+    d, e, f = b // 4, b % 4, (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return date(y, month, day)
+
+
+HOLIDAY_RULES = {
+    "mlk":          ("MLK Day",         lambda y: _nth_weekday(y, 1, 0, 3)),
+    "presidents":   ("Presidents' Day", lambda y: _nth_weekday(y, 2, 0, 3)),
+    "easter":       ("Easter",          _easter),
+    "mothersday":   ("Mother's Day",    lambda y: _nth_weekday(y, 5, 6, 2)),
+    "memorial":     ("Memorial Day",    lambda y: _last_weekday(y, 5, 0)),
+    "fathersday":   ("Father's Day",    lambda y: _nth_weekday(y, 6, 6, 3)),
+    "labor":        ("Labor Day",       lambda y: _nth_weekday(y, 9, 0, 1)),
+    "thanksgiving": ("Thanksgiving",    lambda y: _nth_weekday(y, 11, 3, 4)),
+}
 
 
 def parse_wall(wall):
@@ -46,9 +85,21 @@ def next_fire_utc(wall, repeat, after=None):
     """First occurrence of (wall, repeat) at or after `after` (default: now).
 
     Returns a naive UTC datetime (what pymongo stores), or None if a one-off
-    time is already past.
+    time is already past. repeat "holiday:<key>" recomputes the holiday's
+    date each year (Labor Day moves; the rule doesn't).
     """
     after = after or datetime.now(timezone.utc)
+    if repeat.startswith("holiday:"):
+        rule = HOLIDAY_RULES.get(repeat.split(":", 1)[1])
+        if rule is None:
+            return None
+        t = parse_wall(wall)
+        for year in range(after.astimezone(EASTERN).year, after.astimezone(EASTERN).year + 3):
+            d = rule[1](year)
+            dt = datetime(d.year, d.month, d.day, t.hour, t.minute, tzinfo=EASTERN)
+            if dt.astimezone(timezone.utc) >= after:
+                return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return None
     dt = parse_wall(wall)
     while dt.astimezone(timezone.utc) < after:
         dt = advance_wall(dt, repeat)

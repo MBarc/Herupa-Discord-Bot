@@ -28,29 +28,46 @@
     var day = ((h + l - 7 * m + 114) % 31) + 1;
     return [month - 1, day];
   }
+  // Floating holidays move each year; their key doubles as the value of the
+  // "Yearly on <holiday>" repeat rule (repeat = "holiday:<key>").
+  var FLOATING = {
+    mlk:          { name: "MLK Day",         md: function (y) { return [0, nthWeekday(y, 0, 1, 3)]; } },
+    presidents:   { name: "Presidents' Day", md: function (y) { return [1, nthWeekday(y, 1, 1, 3)]; } },
+    easter:       { name: "Easter",          md: function (y) { return easterDay(y); } },
+    mothersday:   { name: "Mother's Day",    md: function (y) { return [4, nthWeekday(y, 4, 0, 2)]; } },
+    memorial:     { name: "Memorial Day",    md: function (y) { return [4, lastWeekday(y, 4, 1)]; } },
+    fathersday:   { name: "Father's Day",    md: function (y) { return [5, nthWeekday(y, 5, 0, 3)]; } },
+    labor:        { name: "Labor Day",       md: function (y) { return [8, nthWeekday(y, 8, 1, 1)]; } },
+    thanksgiving: { name: "Thanksgiving",    md: function (y) { return [10, nthWeekday(y, 10, 4, 4)]; } }
+  };
+
   function holidays(y) {
     var out = {};
-    function put(m, d, name) { out[m + "-" + d] = name; }
+    function put(m, d, name, key) { out[m + "-" + d] = { name: name, key: key || "" }; }
     put(0, 1, "New Year's Day");
-    put(0, nthWeekday(y, 0, 1, 3), "MLK Day");
     put(1, 14, "Valentine's Day");
-    put(1, nthWeekday(y, 1, 1, 3), "Presidents' Day");
     put(2, 17, "St. Patrick's Day");
     put(3, 1, "April Fools' Day");
-    var e = easterDay(y); put(e[0], e[1], "Easter");
-    put(4, nthWeekday(y, 4, 0, 2), "Mother's Day");
-    put(4, lastWeekday(y, 4, 1), "Memorial Day");
-    put(5, nthWeekday(y, 5, 0, 3), "Father's Day");
     put(5, 19, "Juneteenth");
     put(6, 4, "Independence Day");
-    put(8, nthWeekday(y, 8, 1, 1), "Labor Day");
     put(9, 31, "Halloween");
     put(10, 11, "Veterans Day");
-    put(10, nthWeekday(y, 10, 4, 4), "Thanksgiving");
     put(11, 24, "Christmas Eve");
     put(11, 25, "Christmas");
     put(11, 31, "New Year's Eve");
+    Object.keys(FLOATING).forEach(function (key) {
+      var md = FLOATING[key].md(y);
+      put(md[0], md[1], FLOATING[key].name, key);
+    });
     return out;
+  }
+
+  function repeatLabel(repeat) {
+    if (repeat && repeat.indexOf("holiday:") === 0) {
+      var f = FLOATING[repeat.slice(8)];
+      return f ? "every " + f.name : repeat;
+    }
+    return repeat;
   }
 
   // ---------- event projection ----------
@@ -63,6 +80,12 @@
   function occursOn(ev, day) {                      // day: Date at midnight
     var start = wallDate(ev);
     if (day < start) return false;
+    if (ev.repeat && ev.repeat.indexOf("holiday:") === 0) {
+      var f = FLOATING[ev.repeat.slice(8)];
+      if (!f) return false;
+      var md = f.md(day.getFullYear());
+      return day.getMonth() === md[0] && day.getDate() === md[1];
+    }
     switch (ev.repeat) {
       case "daily":   return true;
       case "weekly":  return day.getDay() === start.getDay();
@@ -106,14 +129,15 @@
       num.textContent = day.getDate();
       cell.appendChild(num);
 
-      var hname = inMonth ? holi[day.getMonth() + "-" + day.getDate()] : null;
-      if (hname) {
+      var hol = inMonth ? holi[day.getMonth() + "-" + day.getDate()] : null;
+      if (hol) {
         var h = document.createElement("span");
         h.className = "chip chip-holiday";
-        h.textContent = hname;
-        h.title = hname;
+        h.textContent = hol.name;
+        h.title = hol.name;
         cell.appendChild(h);
-        cell.dataset.holiday = hname;
+        cell.dataset.holiday = hol.name;
+        cell.dataset.holidayKey = hol.key;
       }
 
       var todays = EVENTS.filter(function (ev) { return occursOn(ev, day); });
@@ -140,12 +164,25 @@
   var compose = document.getElementById("compose");
   var manage = document.getElementById("manage");
 
-  function openCompose(dateStr, holidayName) {
+  function openCompose(dateStr, holidayName, holidayKey) {
     var d = dateStr.split("-");
     var pretty = new Date(+d[0], +d[1] - 1, +d[2]).toDateString();
     document.getElementById("compose-title").textContent = "Schedule for " + pretty;
     document.getElementById("compose-holiday").textContent = holidayName ? "🌸 " + holidayName : "";
     document.getElementById("s-wall").value = dateStr + "T09:00";
+    // Floating holidays get a rule-based repeat so next year lands on the
+    // holiday, not on this year's date.
+    var sel = document.getElementById("s-repeat");
+    var injected = document.getElementById("s-repeat-holiday");
+    if (injected) injected.remove();
+    if (holidayKey) {
+      var opt = document.createElement("option");
+      opt.id = "s-repeat-holiday";
+      opt.value = "holiday:" + holidayKey;
+      opt.textContent = "Yearly on " + holidayName;
+      sel.appendChild(opt);
+    }
+    sel.value = "none";
     compose.showModal();
     document.getElementById("s-name").focus();
   }
@@ -155,7 +192,7 @@
     if (!ev) return;
     document.getElementById("manage-title").textContent = ev.name;
     document.getElementById("manage-meta").textContent =
-      ev.channel + " · repeats " + ev.repeat + " · " +
+      ev.channel + " · repeats " + repeatLabel(ev.repeat) + " · " +
       (ev.enabled ? ("next " + ev.when) : (ev.last ? "sent " + ev.last : "paused"));
     document.getElementById("manage-content").textContent = ev.content || "(embed only)";
     document.getElementById("manage-toggle-id").value = id;
@@ -168,12 +205,12 @@
     var chip = e.target.closest(".chip-event");
     if (chip) { openManage(chip.dataset.eventId); return; }
     var cell = e.target.closest(".cal-cell");
-    if (cell) openCompose(cell.dataset.date, cell.dataset.holiday);
+    if (cell) openCompose(cell.dataset.date, cell.dataset.holiday, cell.dataset.holidayKey);
   });
   body.addEventListener("keydown", function (e) {
     if (e.key !== "Enter" && e.key !== " ") return;
     var cell = e.target.closest(".cal-cell");
-    if (cell) { e.preventDefault(); openCompose(cell.dataset.date, cell.dataset.holiday); }
+    if (cell) { e.preventDefault(); openCompose(cell.dataset.date, cell.dataset.holiday, cell.dataset.holidayKey); }
   });
 
   document.querySelectorAll("[data-closes]").forEach(function (b) {

@@ -6,6 +6,22 @@ document.querySelectorAll("input[data-toggles]").forEach(function (box) {
   sync();
 });
 
+// Remember the composer's channel across sends and visits.
+(function () {
+  var chan = document.getElementById("c-channel");
+  if (!chan) return;
+  var saved = localStorage.getItem("herupa-composer-channel");
+  if (saved && chan.querySelector('option[value="' + saved + '"]')) {
+    chan.value = saved;
+  }
+  chan.addEventListener("change", function () {
+    localStorage.setItem("herupa-composer-channel", chan.value);
+  });
+  chan.form.addEventListener("submit", function () {
+    localStorage.setItem("herupa-composer-channel", chan.value);
+  });
+})();
+
 // Live Discord-style preview on the composer page.
 (function () {
   var content = document.getElementById("c-content");
