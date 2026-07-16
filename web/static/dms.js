@@ -195,9 +195,30 @@ function renderMarkdown(raw) {
   var user = pane.dataset.user;
   var lastId = "";
 
+  function refresh() {
+    fetch("/dms/thread?u=" + encodeURIComponent(user))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (msgs) { if (msgs) render(msgs); })
+      .catch(function () {});
+  }
+
+  function deleteMessage(id) {
+    if (!confirm("Delete this message? This removes it from the DM in Discord.")) return;
+    fetch("/dms/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "user_id=" + encodeURIComponent(user) + "&message_id=" + encodeURIComponent(id)
+    }).then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok) refresh();
+        else alert("Couldn't delete it: " + (res.error || "unknown error"));
+      }).catch(function () { alert("Couldn't delete it (network error)."); });
+  }
+
   function render(msgs) {
     if (!msgs.length) {
       pane.innerHTML = '<p class="empty">No messages yet. Say hi as Herupa below.</p>';
+      lastId = "";
       return;
     }
     pane.innerHTML = "";
@@ -215,11 +236,28 @@ function renderMarkdown(raw) {
         bubble.appendChild(document.createElement("br"));
         bubble.appendChild(link);
       });
-      var time = document.createElement("span");
-      time.className = "dm-time";
-      time.textContent = m.when;
-      row.appendChild(bubble);
-      row.appendChild(time);
+      var meta = document.createElement("span");
+      meta.className = "dm-time";
+      meta.textContent = m.when;
+      // Herupa can delete her own messages.
+      if (m.her) {
+        var del = document.createElement("button");
+        del.type = "button";
+        del.className = "dm-delete";
+        del.title = "Delete this message";
+        del.setAttribute("aria-label", "Delete this message");
+        del.textContent = "🗑";
+        del.addEventListener("click", function () { deleteMessage(m.id); });
+        row.appendChild(bubble);
+        var foot = document.createElement("span");
+        foot.className = "dm-foot";
+        foot.appendChild(del);
+        foot.appendChild(meta);
+        row.appendChild(foot);
+      } else {
+        row.appendChild(bubble);
+        row.appendChild(meta);
+      }
       pane.appendChild(row);
     });
     pane.scrollTop = pane.scrollHeight;

@@ -30,6 +30,24 @@ document.querySelectorAll("input[data-toggles]").forEach(function (box) {
   });
 })();
 
+// Confirm before the composer sends as Herupa.
+(function () {
+  var form = document.getElementById("composer-form");
+  var dialog = document.getElementById("c-confirm");
+  if (!form || !dialog) return;
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var sel = document.getElementById("c-channel");
+    document.getElementById("c-confirm-target").textContent =
+      sel.options[sel.selectedIndex].text;
+    dialog.showModal();
+  });
+  document.getElementById("c-confirm-send").addEventListener("click", function () {
+    dialog.close();
+    form.submit();   // native submit() skips the submit listener above
+  });
+})();
+
 // Live Discord-style preview on the composer page.
 (function () {
   var content = document.getElementById("c-content");

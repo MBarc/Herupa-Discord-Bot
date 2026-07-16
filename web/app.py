@@ -756,6 +756,20 @@ def dms_schedule(request: Request, user_id: str = Form(...), content: str = Form
                 ok=f"Scheduled a DM to {name} for {fmt_eastern(nxt)} Eastern.")
 
 
+@app.post("/dms/delete")
+def dms_delete(request: Request, user_id: str = Form(...), message_id: str = Form(...)):
+    if not _session_ok(request):
+        return JSONResponse({"ok": False, "error": "Not signed in."}, status_code=401)
+    # Discord only lets a bot delete its OWN messages in a DM, so this can't
+    # touch the other person's messages even if asked to.
+    try:
+        api("DELETE", f"/channels/{dm_channel_id(user_id)}/messages/{message_id}")
+    except RuntimeError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    audit("dms.delete", f"in DM with {display_name(user_id)}")
+    return JSONResponse({"ok": True})
+
+
 @app.post("/dms/send")
 def dms_send(request: Request, user_id: str = Form(...), content: str = Form(...)):
     if (r := guard(request)):

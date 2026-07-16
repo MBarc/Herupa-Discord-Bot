@@ -60,5 +60,14 @@
     </div>
   </section>
 </div>
+
+<dialog id="c-confirm" class="modal">
+  <div class="modal-head"><h2>Send this message?</h2></div>
+  <p>Herupa will post to <strong id="c-confirm-target"></strong> right now. This can't be undone.</p>
+  <div class="modal-actions">
+    <button type="button" class="btn btn-ghost" data-closes="c-confirm">Cancel</button>
+    <button type="button" class="btn btn-primary" id="c-confirm-send">Send as Herupa</button>
+  </div>
+</dialog>
 {% endblock %}
 {% block scripts %}<script src="/static/herupa.js"></script>{% endblock %}
