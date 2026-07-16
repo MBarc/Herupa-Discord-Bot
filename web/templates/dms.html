@@ -42,13 +42,51 @@
       <label class="sr-only" for="dm-input">Message as Herupa</label>
       <textarea id="dm-input" name="content" rows="2"
                 placeholder="Message {{ convo.name }} as Herupa..." required></textarea>
-      <button type="submit" class="btn btn-primary">Send</button>
+      <div class="dm-send-wrap">
+        <button type="submit" class="btn btn-primary" id="dm-send-btn" title="Hold to schedule">Send</button>
+        <div class="send-menu" id="dm-send-menu" hidden>
+          <button type="button" id="dm-send-now">Send now</button>
+          <button type="button" id="dm-send-schedule">🕐 Schedule send</button>
+        </div>
+      </div>
     </form>
     {% else %}
     <p class="empty dm-empty">Pick a conversation on the left, or start a new one with “New message”.</p>
     {% endif %}
   </section>
 </div>
+
+{% if convo %}
+<dialog id="dm-sched" class="modal">
+  <form method="post" action="/dms/schedule" class="form">
+    <div class="modal-head"><h2>Schedule message</h2></div>
+    <input type="hidden" name="user_id" value="{{ convo.id }}">
+    <p class="hint">Herupa will DM <strong>{{ convo.name }}</strong> at the time you pick.</p>
+    <label for="dm-sched-content">Message</label>
+    <textarea id="dm-sched-content" name="content" rows="3" required></textarea>
+    <div class="form-row">
+      <div>
+        <label for="dm-sched-wall">Send at (Eastern)</label>
+        <input id="dm-sched-wall" name="wall" type="datetime-local" required>
+      </div>
+      <div>
+        <label for="dm-sched-repeat">Repeat</label>
+        <select id="dm-sched-repeat" name="repeat">
+          <option value="none">Does not repeat</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="yearly">Yearly</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-closes="dm-sched">Cancel</button>
+      <button type="submit" class="btn btn-primary">Schedule</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
 
 <dialog id="dm-new" class="modal">
   <form method="post" action="/dms/send" class="form" id="dm-new-form">

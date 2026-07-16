@@ -1,3 +1,11 @@
+// Any button with data-closes="<dialog id>" closes that <dialog>.
+document.querySelectorAll("[data-closes]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    var d = document.getElementById(b.dataset.closes);
+    if (d && d.close) d.close();
+  });
+});
+
 // Checkbox-driven show/hide (embed fields on schedule + composer).
 document.querySelectorAll("input[data-toggles]").forEach(function (box) {
   var target = document.getElementById(box.dataset.toggles);

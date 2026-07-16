@@ -87,6 +87,51 @@ function renderMarkdown(raw) {
                       function (_, i) { return codes[+i]; });
 }
 
+// Press and hold Send to reveal a schedule option (Teams-style).
+(function () {
+  var btn = document.getElementById("dm-send-btn");
+  var menu = document.getElementById("dm-send-menu");
+  if (!btn || !menu) return;
+  var held = false, timer = null;
+
+  function startHold() {
+    held = false;
+    timer = setTimeout(function () { held = true; menu.hidden = false; }, 450);
+  }
+  function endHold() { clearTimeout(timer); }
+
+  btn.addEventListener("mousedown", startHold);
+  btn.addEventListener("mouseup", endHold);
+  btn.addEventListener("mouseleave", endHold);
+  btn.addEventListener("touchstart", startHold, { passive: true });
+  btn.addEventListener("touchend", endHold);
+  // A long-press ends in a click; swallow it so the form doesn't send.
+  btn.addEventListener("click", function (e) {
+    if (held) { e.preventDefault(); held = false; }
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) menu.hidden = true;
+  });
+
+  var input = document.getElementById("dm-input");
+  document.getElementById("dm-send-now").addEventListener("click", function () {
+    menu.hidden = true;
+    if (input.value.trim()) input.form.submit();
+  });
+  document.getElementById("dm-send-schedule").addEventListener("click", function () {
+    menu.hidden = true;
+    var pad = function (n) { return String(n).padStart(2, "0"); };
+    var d = new Date(Date.now() + 3600000);   // default: an hour from now
+    document.getElementById("dm-sched-content").value = input.value;
+    document.getElementById("dm-sched-wall").value =
+      d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+      "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    document.getElementById("dm-sched").showModal();
+    document.getElementById("dm-sched-content").focus();
+  });
+})();
+
 (function () {
   var pane = document.getElementById("dm-thread");
   if (!pane) return;

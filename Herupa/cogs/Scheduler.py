@@ -139,7 +139,6 @@ class Scheduler(commands.Cog):
                 print(f"[Scheduler] failed to fire {doc.get('name')!r}: {e!r}")
 
     async def _fire(self, doc, now):
-        channel = self.client.get_channel(int(doc["channel_id"]))
         embed = None
         if doc.get("embed"):
             e = doc["embed"]
@@ -147,12 +146,26 @@ class Scheduler(commands.Cog):
                 title=e.get("title") or None,
                 description=e.get("description") or None,
                 colour=discord.Colour(int(e.get("color", 0xFFB7C5))))
-        if channel is not None:
-            await channel.send(content=doc.get("content") or None, embed=embed)
-            print(f"[Scheduler] sent {doc.get('name')!r} to #{channel.name}")
+        content = doc.get("content") or None
+
+        if doc.get("user_id"):
+            # DM target: open (or reuse) Herupa's DM channel with the user.
+            try:
+                user = (self.client.get_user(int(doc["user_id"]))
+                        or await self.client.fetch_user(int(doc["user_id"])))
+                channel = user.dm_channel or await user.create_dm()
+                await channel.send(content=content, embed=embed)
+                print(f"[Scheduler] DM'd {doc.get('name')!r} to {user}")
+            except Exception as e:
+                print(f"[Scheduler] DM failed for {doc.get('name')!r}: {e!r}")
         else:
-            print(f"[Scheduler] channel {doc.get('channel_id')} not found "
-                  f"for {doc.get('name')!r}")
+            channel = self.client.get_channel(int(doc["channel_id"]))
+            if channel is not None:
+                await channel.send(content=content, embed=embed)
+                print(f"[Scheduler] sent {doc.get('name')!r} to #{channel.name}")
+            else:
+                print(f"[Scheduler] channel {doc.get('channel_id')} not found "
+                      f"for {doc.get('name')!r}")
 
         update = {"last_fired": now}
         nxt = None

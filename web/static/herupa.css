@@ -283,6 +283,19 @@ input[type="checkbox"] { width: auto; accent-color: var(--blossom); }
 .dm-her .md-code, .dm-her .md-pre { background: rgba(51, 32, 42, .14); }
 .dm-composer { display: flex; gap: 10px; align-items: flex-end; border-top: 1px solid var(--border); padding-top: 12px; }
 .dm-composer .btn { margin-top: 0; flex: none; }
+.dm-send-wrap { position: relative; flex: none; }
+.send-menu {
+  position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 20;
+  background: var(--hill); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(15, 15, 25, .55); padding: 4px; min-width: 176px;
+  display: flex; flex-direction: column;
+}
+.send-menu[hidden] { display: none; }
+.send-menu button {
+  background: transparent; border: none; color: var(--paper); text-align: left;
+  padding: 9px 11px; border-radius: 7px; font: 14px var(--body); cursor: pointer;
+}
+.send-menu button:hover { background: var(--hill-2); }
 .dm-empty { margin: auto; }
 .dm-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .dm-page-head .btn { margin-top: 4px; flex: none; }

@@ -424,7 +424,10 @@ def schedule(request: Request):
         d["id"] = str(d["_id"])
         d["when"] = fmt_eastern(d.get("next_fire"))
         d["last"] = fmt_eastern(d.get("last_fired"))
-        d["channel"] = chan_labels.get(str(d.get("channel_id")), str(d.get("channel_id")))
+        if d.get("user_id"):
+            d["channel"] = "💬 " + d.get("dm_name", "DM")
+        else:
+            d["channel"] = chan_labels.get(str(d.get("channel_id")), str(d.get("channel_id")))
         d["repeat_label"] = repeat_label(d.get("repeat", "none"))
     events = [{"id": d["id"], "name": d["name"], "wall": d["wall"],
                "repeat": d.get("repeat", "none"), "enabled": d["enabled"],
@@ -806,6 +809,27 @@ def dms_thread(request: Request, u: str):
         return JSONResponse(fetch_thread(u))
     except RuntimeError:
         return JSONResponse([], status_code=502)
+
+
+@app.post("/dms/schedule")
+def dms_schedule(request: Request, user_id: str = Form(...), content: str = Form(...),
+                 wall: str = Form(...), repeat: str = Form("none")):
+    if (r := guard(request)):
+        return r
+    if not content.strip():
+        return back(f"/dms?u={user_id}", err="Write the message first.")
+    nxt = next_fire_utc(wall, repeat)
+    if nxt is None:
+        return back(f"/dms?u={user_id}", err="That time is already past. Pick a future time.")
+    name = display_name(user_id)
+    mongo["webui"]["scheduled"].insert_one({
+        "name": f"DM to {name}", "user_id": int(user_id), "dm_name": name,
+        "channel_id": None, "content": content.strip(), "embed": None,
+        "wall": wall, "repeat": repeat, "next_fire": nxt,
+        "enabled": True, "last_fired": None})
+    audit("dms.schedule", f"-> {name} at {fmt_eastern(nxt)}")
+    return back(f"/dms?u={user_id}",
+                ok=f"Scheduled a DM to {name} for {fmt_eastern(nxt)} Eastern.")
 
 
 @app.post("/dms/send")
