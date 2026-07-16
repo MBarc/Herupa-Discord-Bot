@@ -40,7 +40,7 @@
     <form method="post" action="/dms/send" class="dm-composer">
       <input type="hidden" name="user_id" value="{{ convo.id }}">
       <label class="sr-only" for="dm-input">Message as Herupa</label>
-      <textarea id="dm-input" name="content" rows="2" data-mentions
+      <textarea id="dm-input" name="content" rows="1" data-mentions
                 placeholder="Message {{ convo.name }} as Herupa..." required></textarea>
       <div class="dm-send-wrap">
         <button type="submit" class="btn btn-primary" id="dm-send-btn" title="Hold to schedule">Send</button>

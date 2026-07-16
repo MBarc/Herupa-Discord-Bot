@@ -287,7 +287,9 @@ input[type="checkbox"] { width: auto; accent-color: var(--blossom); }
 .dm-her .md-code, .dm-her .md-pre { background: rgba(51, 32, 42, .14); }
 .dm-composer { display: flex; gap: 10px; align-items: flex-end; border-top: 1px solid var(--border); padding-top: 12px; }
 .dm-composer .btn { margin-top: 0; flex: none; }
+#dm-input { resize: none; overflow-y: auto; max-height: 160px; line-height: 1.4; }
 .dm-send-wrap { position: relative; flex: none; }
+.send-menu button.drag-hover { background: var(--hill-2); }
 .send-menu {
   position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 20;
   background: var(--hill); border: 1px solid var(--border); border-radius: 10px;

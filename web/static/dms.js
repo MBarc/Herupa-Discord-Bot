@@ -87,39 +87,21 @@ function renderMarkdown(raw) {
                       function (_, i) { return codes[+i]; });
 }
 
-// Press and hold Send to reveal a schedule option (Teams-style).
+// Press and hold Send to reveal Send now / Schedule send. You can either
+// drag onto an option and release to pick it (native long-press style), or
+// release and then click. A quick click just sends.
 (function () {
   var btn = document.getElementById("dm-send-btn");
   var menu = document.getElementById("dm-send-menu");
   if (!btn || !menu) return;
-  var held = false, timer = null;
-
-  function startHold() {
-    held = false;
-    timer = setTimeout(function () { held = true; menu.hidden = false; }, 450);
-  }
-  function endHold() { clearTimeout(timer); }
-
-  btn.addEventListener("mousedown", startHold);
-  btn.addEventListener("mouseup", endHold);
-  btn.addEventListener("mouseleave", endHold);
-  btn.addEventListener("touchstart", startHold, { passive: true });
-  btn.addEventListener("touchend", endHold);
-  // A long-press ends in a click; swallow it so the form doesn't send.
-  btn.addEventListener("click", function (e) {
-    if (held) { e.preventDefault(); held = false; }
-  });
-
-  document.addEventListener("click", function (e) {
-    if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) menu.hidden = true;
-  });
-
   var input = document.getElementById("dm-input");
-  document.getElementById("dm-send-now").addEventListener("click", function () {
+  var holdTimer = null, openedByHold = false, suppressClick = false;
+
+  function sendNow() {
     menu.hidden = true;
     if (input.value.trim()) input.form.submit();
-  });
-  document.getElementById("dm-send-schedule").addEventListener("click", function () {
+  }
+  function openSchedule() {
     menu.hidden = true;
     var pad = function (n) { return String(n).padStart(2, "0"); };
     var d = new Date(Date.now() + 3600000);   // default: an hour from now
@@ -129,7 +111,81 @@ function renderMarkdown(raw) {
       "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
     document.getElementById("dm-sched").showModal();
     document.getElementById("dm-sched-content").focus();
+  }
+  function activate(item) {
+    if (item && item.id === "dm-send-now") sendNow();
+    else if (item && item.id === "dm-send-schedule") openSchedule();
+  }
+  function itemAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    return el && el.closest ? el.closest(".send-menu button") : null;
+  }
+  function highlight(item) {
+    Array.prototype.forEach.call(menu.querySelectorAll("button"), function (b) {
+      b.classList.toggle("drag-hover", b === item);
+    });
+  }
+  function open() { openedByHold = true; menu.hidden = false; }
+  function release(x, y, isTouch, e) {
+    clearTimeout(holdTimer);
+    if (menu.hidden) return;
+    var item = itemAt(x, y);
+    highlight(null);
+    if (item) {
+      if (isTouch) e.preventDefault();
+      activate(item);
+      suppressClick = true;
+      setTimeout(function () { suppressClick = false; }, 300);
+    }
+  }
+
+  btn.addEventListener("mousedown", function () {
+    openedByHold = false;
+    holdTimer = setTimeout(open, 350);
   });
+  document.addEventListener("mousemove", function (e) {
+    if (!menu.hidden) highlight(itemAt(e.clientX, e.clientY));
+  });
+  document.addEventListener("mouseup", function (e) { release(e.clientX, e.clientY, false, e); });
+
+  btn.addEventListener("touchstart", function () {
+    openedByHold = false;
+    holdTimer = setTimeout(open, 350);
+  }, { passive: true });
+  document.addEventListener("touchmove", function (e) {
+    if (!menu.hidden && e.touches.length) {
+      var t = e.touches[0];
+      highlight(itemAt(t.clientX, t.clientY));
+    }
+  }, { passive: true });
+  document.addEventListener("touchend", function (e) {
+    var t = e.changedTouches[0];
+    release(t ? t.clientX : 0, t ? t.clientY : 0, true, e);
+  });
+
+  // Swallow the click that ends a long-press so the form doesn't submit.
+  btn.addEventListener("click", function (e) {
+    if (openedByHold || suppressClick) { e.preventDefault(); openedByHold = false; }
+  });
+  // Click outside closes the menu.
+  document.addEventListener("click", function (e) {
+    if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) menu.hidden = true;
+  });
+  // Items also work with a plain click (open, release, then click).
+  document.getElementById("dm-send-now").addEventListener("click", function (e) {
+    e.preventDefault(); sendNow();
+  });
+  document.getElementById("dm-send-schedule").addEventListener("click", function (e) {
+    e.preventDefault(); openSchedule();
+  });
+
+  // Message box starts one line tall (matching Send) and grows for newlines.
+  function autoGrow() {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 160) + "px";
+  }
+  input.addEventListener("input", autoGrow);
+  autoGrow();
 })();
 
 (function () {
