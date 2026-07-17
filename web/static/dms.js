@@ -246,7 +246,7 @@ function renderMarkdown(raw) {
         del.className = "dm-delete";
         del.title = "Delete this message";
         del.setAttribute("aria-label", "Delete this message");
-        del.textContent = "🗑";
+        del.textContent = "Delete";
         del.addEventListener("click", function () { deleteMessage(m.id); });
         row.appendChild(bubble);
         var foot = document.createElement("span");
