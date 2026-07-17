@@ -355,7 +355,13 @@ def page(request, name, **ctx):
 
 
 def back(path, ok=None, err=None):
-    q = ("?ok=" + urllib.parse.quote(ok)) if ok else ("?err=" + urllib.parse.quote(err)) if err else ""
+    sep = "&" if "?" in path else "?"   # path may already carry a query (e.g. ?u=)
+    if ok:
+        q = sep + "ok=" + urllib.parse.quote(ok)
+    elif err:
+        q = sep + "err=" + urllib.parse.quote(err)
+    else:
+        q = ""
     return RedirectResponse(path + q, status_code=303)
 
 
