@@ -217,8 +217,21 @@ class Favorites(commands.Cog):
         but only those who can actually see that channel (so private rooms never
         ping, or reveal themselves to, someone who can't join)."""
 
+        # The CreateRoom trigger channel isn't a real VC, just a doorway that
+        # immediately moves you into your own room. Treat it as no-channel: no
+        # alert for stepping into it, and landing in the created room right
+        # after counts as the actual connect.
+        lobby_name = getattr(self.client.get_cog("CreateRoom"), "createRoomName",
+                             "🔧create room🔧")
+        before_channel = before.channel
+        if before_channel is not None and before_channel.name == lobby_name:
+            before_channel = None
+        after_channel = after.channel
+        if after_channel is not None and after_channel.name == lobby_name:
+            after_channel = None
+
         # Only fire on a fresh connect (ignore mutes, moves, and disconnects).
-        if member.bot or before.channel is not None or after.channel is None:
+        if member.bot or before_channel is not None or after_channel is None:
             return
 
         joiner_id = str(member.id)
@@ -229,7 +242,7 @@ class Favorites(commands.Cog):
         if now - self._last_notified.get(joiner_id, 0) < self.notify_cooldown_seconds:
             return
 
-        channel = after.channel
+        channel = after_channel
         guild = member.guild
         sent = 0
 
