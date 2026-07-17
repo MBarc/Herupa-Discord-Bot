@@ -66,7 +66,7 @@ class Help(commands.Cog):
                 "$crpm": "Toggle privacy mode for your auto-created voice room.",
                 "$migrate {channel id} · $m": "Move everyone in your voice channel to another one.",
                 "$addfavorite {@member} · $af": "Favorite a member and get pinged when they join a VC (must be mutual).",
-                "$removefavorite {@member} · $rf": "Remove a member from your favorites.",
+                "$removefavorite {name/ID/number} · $rf": "Remove a favorite by name, user ID, or their number in $displayfavorites, so you never have to ping them.",
                 "$displayfavorites · $df": "See your list of favorites.",
             }),
             ("🎶 Music", {

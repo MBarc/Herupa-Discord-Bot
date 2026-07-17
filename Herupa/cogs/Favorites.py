@@ -4,6 +4,7 @@ Purpose: This file contains the commands a user can use to manage their favorite
 from discord.ext import commands
 import discord
 
+import re
 import sys
 import os
 import time
@@ -61,11 +62,70 @@ class Favorites(commands.Cog):
         # Sending feedback to the user
         await ctx.channel.send(f"You have successfully added {ctx.message.mentions[0].name} as a favorite!")
 
+    async def _favorite_users(self, authorID):
+        """Ordered (user_id, user_or_None) pairs for authorID's favorites, in
+        the same order displayfavorites lists them (so list numbers line up)."""
+        pairs = []
+        for document in self.mongo_instance.returnCollectionEntries(database_name=self.dbName, collection_name=authorID):
+            uid = str(document["id"])
+            user = self.client.get_user(int(uid))
+            if user is None:
+                try:
+                    user = await self.client.fetch_user(int(uid))
+                except discord.HTTPException:
+                    user = None  # deleted account etc.; still removable by ID/number
+            pairs.append((uid, user))
+        return pairs
+
+    def _match_favorite(self, query, favorites):
+        """Resolve query (a name, raw user ID, <@id> text, or 1-based list
+        number) against the ordered favorites. Returns (user_id, error)."""
+        query = query.strip().lstrip("@")
+
+        mention_match = re.fullmatch(r"<@!?(\d+)>", query)
+        if mention_match:
+            query = mention_match.group(1)
+
+        if query.isdigit():
+            # Real Discord IDs are 17+ digit snowflakes; anything short is a
+            # position on the $displayfavorites list.
+            if len(query) >= 15:
+                if any(uid == query for uid, _ in favorites):
+                    return query, None
+                return None, "That ID isn't in your favorites."
+            index = int(query)
+            if 1 <= index <= len(favorites):
+                return favorites[index - 1][0], None
+            return None, (f"That number isn't on your list. You have "
+                          f"{len(favorites)} favorite(s), see **$displayfavorites**.")
+
+        wanted = query.casefold()
+        exact, partial = [], []
+        for uid, user in favorites:
+            if user is None:
+                continue
+            names = {n.casefold() for n in
+                     (user.name, user.display_name, getattr(user, "global_name", None))
+                     if n}
+            if wanted in names:
+                exact.append((uid, user))
+            elif any(wanted in n for n in names):
+                partial.append((uid, user))
+        matches = exact or partial
+        if not matches:
+            return None, (f"I couldn't find **{query}** in your favorites. "
+                          f"Check **$displayfavorites**.")
+        if len(matches) > 1:
+            names = ", ".join(user.name for _, user in matches)
+            return None, (f"That matches more than one favorite ({names}). "
+                          f"Use their number from **$displayfavorites**.")
+        return matches[0][0], None
+
     @commands.command(name="removeFavorite",
-                      description="Removes a favorite member from the author's favorites list",
+                      description="Removes a favorite by name, user ID, or list number (no @-ping needed; a mention still works too)",
                       brief="Removes a favorite.",
                       aliases=["rf"])
-    async def removefavorite(self, ctx):
+    async def removefavorite(self, ctx, *, who: str = None):
 
         # Getting the author
         authorID = str(ctx.author.id)
@@ -74,18 +134,46 @@ class Favorites(commands.Cog):
         if not self.mongo_instance.doesCollectionExist(database_name=self.dbName, collection_name=authorID):
             self.mongo_instance.createCollection(database_name=self.dbName, collection_name=authorID)
 
-        # If there isn't any or too many mentions
-        if len(ctx.message.mentions) != 1:
-            raise Exception("You have to specify 1 person at a time.")
+        favorites = await self._favorite_users(authorID)
+        if not favorites:
+            await ctx.channel.send("You don't have any favorites to remove!")
+            return
 
-        # Grabbing the member that we're removing as a favorite
-        mention = str(ctx.message.mentions[0].id)
+        # Mentions still work for anyone who doesn't mind the ping, but the
+        # whole point of the other forms is removing someone quietly.
+        if ctx.message.mentions:
+            if len(ctx.message.mentions) != 1:
+                raise Exception("You have to specify 1 person at a time.")
+            target_id = str(ctx.message.mentions[0].id)
+            if not any(uid == target_id for uid, _ in favorites):
+                await ctx.channel.send(f"{ctx.message.mentions[0].name} isn't in your favorites.")
+                return
+        elif who:
+            target_id, error = self._match_favorite(who, favorites)
+            if error:
+                await ctx.channel.send(error)
+                return
+        else:
+            await ctx.channel.send(
+                "Tell me who to remove: **$removefavorite <name, user ID, or list number>** "
+                "(numbers are in **$displayfavorites**). No need to @-ping them.")
+            return
 
         # Removing the member as a favorite for the author
-        self.mongo_instance.removeCollectionEntry(database_name=self.dbName, collection_name=authorID, payload={"id": mention})
+        self.mongo_instance.removeCollectionEntry(database_name=self.dbName, collection_name=authorID, payload={"id": target_id})
 
-        # Sending feedback to the user
-        await ctx.channel.send(f"You have successfully removed {ctx.message.mentions[0].name} as a favorite.")
+        # Leave no trace in the channel: the invoking command names who got
+        # removed, so it goes too (not possible in DMs, hence the guard).
+        try:
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        # Sending feedback to the user (plain name, never a pinging mention);
+        # the confirmation cleans itself up as well
+        name = next((user.name for uid, user in favorites if uid == target_id and user), target_id)
+        await ctx.channel.send(f"You have successfully removed {name} as a favorite.",
+                               delete_after=10)
 
     @commands.command(name='displayfavorites',
                       description='Returns the full list of favorites for the user who issued the command.',
@@ -99,23 +187,17 @@ class Favorites(commands.Cog):
         # Getting the author
         authorID = str(ctx.author.id)
 
-        # Retrieve documents from the MongoDB collection
-        documents = self.mongo_instance.returnCollectionEntries(database_name=self.dbName, collection_name=authorID)
+        favorites = await self._favorite_users(authorID)
 
         # If there are documents in the collection; if the user has favorites specified
-        if len(documents) != 0:
+        if favorites:
 
-            # Initialize the message
+            # Numbered so entries can be removed by position, without a ping
             message = "Here are your favorites:\n"
-
-            # Iterate through the documents and retrieve user names
-            for document in documents:
-
-                # Retrieve user information using user ID
-                user = await self.client.fetch_user(document['id'])
-
-                # Append user name to the message
-                message += f"- {user.name}\n"
+            for position, (uid, user) in enumerate(favorites, start=1):
+                name = user.name if user else f"unknown user ({uid})"
+                message += f"{position}. {name}\n"
+            message += "\nRemove one anytime with **$removefavorite <name or number>** (no @-ping needed)."
 
         else: # If the user doesn't have any favorites specified
 
