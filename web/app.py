@@ -436,7 +436,10 @@ def schedule(request: Request):
         d["repeat_label"] = repeat_label(d.get("repeat", "none"))
     events = [{"id": d["id"], "name": d["name"], "wall": d["wall"],
                "repeat": d.get("repeat", "none"), "enabled": d["enabled"],
-               "channel": d["channel"], "content": (d.get("content") or "")[:200],
+               "channel": d["channel"], "content": d.get("content") or "",
+               "channel_id": str(d.get("channel_id") or ""),
+               "user_id": str(d.get("user_id") or ""),
+               "dm_name": d.get("dm_name", ""), "embed": d.get("embed"),
                "when": d["when"], "last": d["last"]} for d in docs]
     events_json = json.dumps(events).replace("<", "\\u003c")
     members = all_members()
@@ -475,6 +478,40 @@ def schedule_create(request: Request, name: str = Form(...), channel_id: str = F
         "repeat": repeat, "next_fire": nxt, "enabled": True, "last_fired": None})
     audit("schedule.create", f"{name.strip()} -> #{channel_id} ({repeat})")
     return back("/schedule", ok=f"Scheduled. First send {fmt_eastern(nxt)} Eastern.")
+
+
+@app.post("/schedule/edit")
+def schedule_edit(request: Request, doc_id: str = Form(...), name: str = Form(...),
+                  wall: str = Form(...), repeat: str = Form("none"),
+                  content: str = Form(""), channel_id: str = Form(""),
+                  use_embed: str = Form(""), embed_title: str = Form(""),
+                  embed_description: str = Form(""), embed_color: str = Form("#FFB7C5")):
+    if (r := guard(request)):
+        return r
+    from bson import ObjectId
+    doc = mongo["webui"]["scheduled"].find_one({"_id": ObjectId(doc_id)})
+    if not doc:
+        return back("/schedule", err="That schedule is gone.")
+    is_dm = bool(doc.get("user_id"))
+    if not content.strip() and not (not is_dm and use_embed and (embed_title or embed_description)):
+        return back("/schedule", err="Give the message some content.")
+    nxt = next_fire_utc(wall, repeat)
+    if nxt is None:
+        return back("/schedule", err="That time is already in the past. Pick a future time or add a repeat.")
+    update = {"name": name.strip() or "Untitled", "content": content.strip(),
+              "wall": wall, "repeat": repeat, "next_fire": nxt, "enabled": True}
+    if is_dm:
+        update["embed"] = None            # DM schedules are text-only
+    else:
+        if channel_id:
+            update["channel_id"] = int(channel_id)
+        update["embed"] = ({"title": embed_title.strip(),
+                            "description": embed_description.strip(),
+                            "color": int(embed_color.lstrip("#") or "FFB7C5", 16)}
+                           if use_embed else None)
+    mongo["webui"]["scheduled"].update_one({"_id": doc["_id"]}, {"$set": update})
+    audit("schedule.edit", f"{name.strip()} ({repeat})")
+    return back("/schedule", ok=f"Updated. Next send {fmt_eastern(nxt)} Eastern.")
 
 
 @app.post("/schedule/toggle")

@@ -37,6 +37,7 @@
         <td>{{ d.repeat_label }}</td>
         <td>{{ "on" if d.enabled else ("sent" if d.repeat == "none" and d.last else "paused") }}</td>
         <td class="row-actions">
+          <button type="button" class="btn btn-ghost btn-small" data-edit="{{ d.id }}">Edit</button>
           <form method="post" action="/schedule/toggle">
             <input type="hidden" name="doc_id" value="{{ d.id }}">
             <button class="btn btn-ghost btn-small">{{ "Pause" if d.enabled else "Enable" }}</button>
@@ -122,7 +123,63 @@
       <input type="hidden" name="doc_id" id="manage-delete-id">
       <button class="btn btn-danger">Delete</button>
     </form>
+    <button type="button" class="btn btn-primary" id="manage-edit-btn">Edit</button>
   </div>
+</dialog>
+
+<dialog id="edit" class="modal">
+  <form method="post" action="/schedule/edit" class="form">
+    <div class="modal-head"><h2>Edit scheduled message</h2></div>
+    <input type="hidden" name="doc_id" id="e-id">
+    <label for="e-name">Name</label>
+    <input id="e-name" name="name" required>
+
+    <div class="form-row">
+      <div id="e-channel-wrap">
+        <label for="e-channel">Channel</label>
+        <select id="e-channel" name="channel_id">
+          {% for c in channels %}<option value="{{ c.id }}">{{ c.label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div id="e-dm-wrap" hidden>
+        <label>Recipient</label>
+        <p class="hint" id="e-dm-label"></p>
+      </div>
+      <div>
+        <label for="e-wall">Send at</label>
+        <input id="e-wall" name="wall" type="datetime-local" required>
+      </div>
+    </div>
+
+    <label for="e-repeat">Repeat</label>
+    <select id="e-repeat" name="repeat">
+      <option value="none">Does not repeat</option>
+      <option value="daily">Daily</option>
+      <option value="weekly">Weekly</option>
+      <option value="monthly">Monthly</option>
+      <option value="yearly">Yearly</option>
+    </select>
+
+    <label for="e-content">Message</label>
+    <textarea id="e-content" name="content" rows="4" data-mentions></textarea>
+
+    <div id="e-embed-toggle-wrap">
+      <label class="check"><input type="checkbox" id="e-use-embed" name="use_embed" value="1" data-toggles="e-embed"> Add an embed</label>
+      <div id="e-embed" class="embed-fields" hidden>
+        <label for="e-etitle">Embed title</label>
+        <input id="e-etitle" name="embed_title">
+        <label for="e-edesc">Embed text</label>
+        <textarea id="e-edesc" name="embed_description" rows="3"></textarea>
+        <label for="e-ecolor">Color</label>
+        <input id="e-ecolor" name="embed_color" type="color" value="#FFB7C5">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-closes="edit">Cancel</button>
+      <button type="submit" class="btn btn-primary">Save changes</button>
+    </div>
+  </form>
 </dialog>
 
 <script id="sched-data" type="application/json">{{ events_json|safe }}</script>

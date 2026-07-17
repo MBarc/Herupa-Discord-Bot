@@ -201,9 +201,11 @@
     document.getElementById("s-name").focus();
   }
 
+  var manageId = null;
   function openManage(id) {
     var ev = EVENTS.find(function (e) { return e.id === id; });
     if (!ev) return;
+    manageId = id;
     document.getElementById("manage-title").textContent = ev.name;
     document.getElementById("manage-meta").textContent =
       ev.channel + " · repeats " + repeatLabel(ev.repeat) + " · " +
@@ -214,6 +216,64 @@
     document.getElementById("manage-toggle-btn").textContent = ev.enabled ? "Pause" : "Enable";
     manage.showModal();
   }
+
+  var edit = document.getElementById("edit");
+  function openEdit(id) {
+    var ev = EVENTS.find(function (e) { return e.id === id; });
+    if (!ev) return;
+    document.getElementById("e-id").value = id;
+    document.getElementById("e-name").value = ev.name;
+    document.getElementById("e-wall").value = ev.wall;
+    document.getElementById("e-content").value = ev.content || "";
+
+    var isDm = !!ev.user_id;
+    document.getElementById("e-channel-wrap").hidden = isDm;
+    document.getElementById("e-dm-wrap").hidden = !isDm;
+    document.getElementById("e-embed-toggle-wrap").hidden = isDm;
+    var chan = document.getElementById("e-channel");
+    chan.disabled = isDm;            // don't submit channel_id for DM schedules
+    if (isDm) {
+      document.getElementById("e-dm-label").textContent = ev.dm_name || "a member";
+    } else if (ev.channel_id && chan.querySelector('option[value="' + ev.channel_id + '"]')) {
+      chan.value = ev.channel_id;
+    }
+
+    // repeat, injecting a holiday option if this schedule uses one
+    var rep = document.getElementById("e-repeat");
+    var inj = document.getElementById("e-repeat-holiday");
+    if (inj) inj.remove();
+    if (ev.repeat && ev.repeat.indexOf("holiday:") === 0) {
+      var opt = document.createElement("option");
+      opt.id = "e-repeat-holiday";
+      opt.value = ev.repeat;
+      opt.textContent = repeatLabel(ev.repeat);
+      rep.appendChild(opt);
+    }
+    rep.value = ev.repeat || "none";
+
+    // embed
+    var useEmbed = document.getElementById("e-use-embed");
+    var em = ev.embed || null;
+    useEmbed.checked = !!em;
+    document.getElementById("e-embed").hidden = !em;
+    document.getElementById("e-etitle").value = em ? (em.title || "") : "";
+    document.getElementById("e-edesc").value = em ? (em.description || "") : "";
+    if (em && typeof em.color === "number") {
+      document.getElementById("e-ecolor").value =
+        "#" + em.color.toString(16).padStart(6, "0");
+    }
+
+    edit.showModal();
+    document.getElementById("e-name").focus();
+  }
+
+  document.getElementById("manage-edit-btn").addEventListener("click", function () {
+    manage.close();
+    if (manageId) openEdit(manageId);
+  });
+  document.querySelectorAll("[data-edit]").forEach(function (b) {
+    b.addEventListener("click", function () { openEdit(b.dataset.edit); });
+  });
 
   body.addEventListener("click", function (e) {
     var chip = e.target.closest(".chip-event");
