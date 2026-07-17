@@ -31,6 +31,19 @@
     chosen.hidden = true; input.hidden = false; input.value = ""; input.focus();
   });
 
+  // Enter sends here too (Shift+Enter for a newline), once a recipient is
+  // chosen. The mention/emoji autocompletes load first and swallow Enter
+  // while their popups are open, so this only fires on a real send.
+  var newContent = document.getElementById("dm-new-content");
+  newContent.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!sendBtn.disabled && newContent.value.trim()) {
+        document.getElementById("dm-new-form").requestSubmit();
+      }
+    }
+  });
+
   input.addEventListener("input", function () {
     clearTimeout(timer);
     var q = input.value.trim();

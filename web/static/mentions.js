@@ -34,9 +34,15 @@
   }
 
   function place(ta) {
+    // Mount inside the open <dialog> when the box lives in one — showModal()
+    // makes everything outside the dialog inert, so a body-mounted menu
+    // would be visible but unclickable there.
+    var host = ta.closest("dialog") || document.body;
+    if (menu.parentNode !== host) host.appendChild(menu);
     var r = ta.getBoundingClientRect();
-    menu.style.left = (window.scrollX + r.left) + "px";
-    menu.style.top = (window.scrollY + r.bottom + 4) + "px";
+    menu.style.position = "fixed";
+    menu.style.left = r.left + "px";
+    menu.style.top = (r.bottom + 4) + "px";
     menu.style.width = Math.min(r.width, 320) + "px";
   }
 
