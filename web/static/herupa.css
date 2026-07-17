@@ -397,7 +397,9 @@ input[type="checkbox"] { width: auto; accent-color: var(--blossom); }
 .dm-composer .emoji-wrap { flex: 1; min-width: 0; }
 .emoji-wrap textarea { width: 100%; padding-right: 36px; box-sizing: border-box; }
 .emoji-toggle {
-  position: absolute; right: 7px; bottom: 6px; border: none; background: transparent;
+  /* top-anchored: optically centered in a one-line box (~40px tall vs the
+     ~21px button), top-right and clear of the resize grip in taller boxes */
+  position: absolute; right: 7px; top: 9px; border: none; background: transparent;
   font-size: 17px; line-height: 1; cursor: pointer; padding: 2px 3px; border-radius: 6px;
   opacity: .55; filter: grayscale(35%); transition: opacity .12s, transform .12s;
 }

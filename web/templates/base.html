@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/herupa.css">
+<link rel="stylesheet" href="/static/herupa.css?v={{ asset_v }}">
 </head>
 <body>
 <div class="shell">
@@ -47,9 +47,9 @@
     {% block content %}{% endblock %}
   </main>
 </div>
-<script src="/static/mentions.js"></script>
-<script src="/static/emoji.js"></script>
-<script src="/static/table-sort.js"></script>
+<script src="/static/mentions.js?v={{ asset_v }}"></script>
+<script src="/static/emoji.js?v={{ asset_v }}"></script>
+<script src="/static/table-sort.js?v={{ asset_v }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

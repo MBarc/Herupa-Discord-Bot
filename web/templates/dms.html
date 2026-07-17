@@ -114,6 +114,6 @@
 <script id="thread-data" type="application/json">{{ thread_json|safe }}</script>
 {% endblock %}
 {% block scripts %}
-<script src="/static/herupa.js"></script>
-<script src="/static/dms.js"></script>
+<script src="/static/herupa.js?v={{ asset_v }}"></script>
+<script src="/static/dms.js?v={{ asset_v }}"></script>
 {% endblock %}

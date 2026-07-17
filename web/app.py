@@ -51,6 +51,9 @@ app = FastAPI()
 BASE = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE, "templates"))
+# Stamped onto every static URL (?v=...) so browsers refetch css/js after a
+# deploy — the service restarts on deploy, which mints a fresh stamp.
+templates.env.globals["asset_v"] = str(int(time.time()))
 
 # ------------------------- auth -------------------------
 # Sessions are stateless: the cookie is "<expiry>.<hmac>", validated by
