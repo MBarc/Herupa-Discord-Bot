@@ -495,24 +495,48 @@ class TicketSystem(commands.Cog):
         # Transcript -> ticket-logs on the dedicated logging server (no-op if unavailable).
         await self.log.send("ticket", embed=embed,
                             file=discord.File(buf, filename=f"ticket-{ticket['number']:04d}.txt"))
+        return text
+
+    # A transcript this size or smaller fits comfortably in one embed
+    # (description cap is 4096); anything bigger goes as a .txt file.
+    TRANSCRIPT_EMBED_LIMIT = 3500
+
+    async def _dm_transcript(self, user, guild_name, ticket, text, intro):
+        """DM the closed ticket's transcript to its opener: short conversations
+        inline as an embed, long ones as the same .txt file the logs get."""
+        try:
+            if len(text) <= self.TRANSCRIPT_EMBED_LIMIT:
+                embed = discord.Embed(
+                    title=f"🎫 Ticket #{ticket['number']:04d} transcript",
+                    description=text, colour=0xFFB7C5)
+                await user.send(intro, embed=embed)
+            else:
+                buf = io.BytesIO(text.encode("utf-8"))
+                await user.send(intro, file=discord.File(
+                    buf, filename=f"ticket-{ticket['number']:04d}.txt"))
+        except discord.HTTPException:
+            pass  # their DMs are closed; the logs still have the transcript
 
     async def _do_close(self, channel, closer, reason):
         ticket = self._open_ticket_for(channel.id)
         if not ticket:
             return
-        await self._save_transcript(channel, ticket, closer, reason)
+        transcript = await self._save_transcript(channel, ticket, closer, reason)
         self.mongo.updateDocumentsByKey(database_name=self.db, collection_name=self.col,
                                         IDkey="channel_id", IDvalue=str(channel.id),
                                         key="status", value="closed")
+        guild_name = channel.guild.name
         if ticket.get("anonymous"):
             user = await self._fetch_user(self._anon_ch2user.get(channel.id))
             self._anon_unlink(channel.id)
-            if user is not None:
-                try:
-                    await user.send(
-                        "🔒 Your anonymous report has been closed by the team. Thanks for reaching out.")
-                except discord.HTTPException:
-                    pass
+            intro = (f"🔒 Your anonymous report over at **{guild_name}** was closed "
+                     f"out by the team. Thanks for reaching out. Here is the transcript:")
+        else:
+            user = await self._fetch_user(ticket.get("opener_id"))
+            intro = (f"🔒 Your ticket over at **{guild_name}** was closed out. "
+                     f"Here is the transcript:")
+        if user is not None:
+            await self._dm_transcript(user, guild_name, ticket, transcript, intro)
         await channel.delete(reason=f"Ticket closed by {closer}: {reason or 'n/a'}")
 
     async def close_from_interaction(self, interaction):
