@@ -8,6 +8,7 @@
 # first await (see acquire()).
 
 import asyncio
+import time
 
 import discord
 import yt_dlp
@@ -70,6 +71,7 @@ class Track:
         self.webpage_url = info.get("webpage_url") or ""
         self.duration = info.get("duration")  # seconds or None (live)
         self.requested_by = requested_by
+        self.resolved_at = time.monotonic()
 
     def pretty_duration(self):
         if not self.duration:
@@ -142,6 +144,7 @@ class Session:
         self.now = None
         self.voice = None
         self.closed = False
+        self._user_skipped = False
         self._wakeup = asyncio.Event()
         self.task = None
 
@@ -153,6 +156,7 @@ class Session:
 
     def skip(self):
         if self.voice and (self.voice.is_playing() or self.voice.is_paused()):
+            self._user_skipped = True
             self.voice.stop()  # the after-callback advances the loop
 
     def pause(self):
@@ -210,6 +214,19 @@ class Session:
                 done = asyncio.Event()
                 loop = asyncio.get_running_loop()
 
+                # Stream URLs go stale while a track waits its turn (YouTube
+                # links expire and get 403'd), so re-resolve any track that
+                # wasn't extracted in the last couple of minutes.
+                if track.webpage_url and time.monotonic() - track.resolved_at > 120:
+                    try:
+                        fresh = await resolve_track(loop, track.webpage_url,
+                                                    track.requested_by)
+                        track.stream_url = fresh.stream_url
+                    except Exception as e:
+                        print(f"Hibiki re-resolve failed for {track.title}: {e!r}")
+
+                self._user_skipped = False
+                started = loop.time()
                 try:
                     source = discord.PCMVolumeTransformer(
                         discord.FFmpegPCMAudio(track.stream_url,
@@ -228,6 +245,17 @@ class Session:
 
                 await self._announce_now_playing(track)
                 await done.wait()
+                # ffmpeg exiting almost instantly on a long track means the CDN
+                # refused the stream (403 etc.) - say so instead of moving on
+                # like nothing happened.
+                if (not self.closed and not self._user_skipped
+                        and track.duration and track.duration > 30
+                        and loop.time() - started < 5):
+                    print(f"Hibiki stream refused for {track.title} "
+                          f"(ffmpeg exited in {loop.time() - started:.1f}s)")
+                    await self._announce_text(
+                        f"⚠️ **{track.title}** wouldn't stream (the source refused "
+                        f"the connection), so I had to skip it.")
                 self.now = None
         finally:
             try:
