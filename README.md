@@ -2,6 +2,18 @@
 
 Herupa is the backbone of the Chill Club Discord server. She is completely open source so feel free to make contributions to her code. Via Overhaul.py, any changes made to this Github repo will automatically get pushed to the live instance of Herupa.
 
+### Setting up a new host
+
+To stand Herupa up on a fresh Debian/Ubuntu-family Linux box (Raspberry Pi included), clone the repo and run the setup script as the user that should own the bot:
+
+```sh
+git clone https://github.com/MBarc/Herupa-Discord-Bot.git
+cd Herupa-Discord-Bot
+./scripts/setup.sh
+```
+
+It installs system and Python dependencies (including the voice-receive fork plus the `patches/voice_recv-dave` overlay that `$mock` needs), starts MongoDB in Docker, prompts for the Discord tokens and web password, installs the `herupa-bot` and `herupa-web` systemd services, and sets up the daily yt-dlp auto-updater cron. Data is not migrated: a fresh host starts with an empty database (levels, birthdays, tickets, and shop purchases start over).
+
 ### Commands
 avatarpic {@member}: Herupa will respond with the avatar pic of the member mentioned.\
 clear {number}: Delete messages in bulk. If no number is specified, 5 messages are cleared.\

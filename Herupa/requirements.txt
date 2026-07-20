@@ -14,4 +14,11 @@ davey
 cogwatch
 discord-webhook
 pymongo
-yt-dlp
+yt-dlp# --- web control room (web/app.py, runs as its own service) ---
+fastapi
+uvicorn
+jinja2
+python-multipart
+# cogwatch needs watchfiles < 0.16; installing uvicorn[standard] once pulled
+# watchfiles 1.x and silently broke cog hot-reloading. Keep this pin.
+watchfiles<0.16
