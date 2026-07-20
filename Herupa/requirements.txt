@@ -14,7 +14,8 @@ davey
 cogwatch
 discord-webhook
 pymongo
-yt-dlp# --- web control room (web/app.py, runs as its own service) ---
+yt-dlp
+# --- web control room (web/app.py, runs as its own service) ---
 fastapi
 uvicorn
 jinja2

@@ -1,28 +1,64 @@
+# The whole Herupa stack: bot + web control room + MongoDB.
+#
+#   cd docker
+#   cp .env.example .env     # then fill in the tokens (or let setup.sh do it)
+#   docker compose up -d --build
+#
+# The repo is bind-mounted at /app, so editing a cog on the host still
+# hot-reloads inside the container - no rebuild for code changes. Rebuild
+# only when Herupa/requirements.txt or patches/ change.
+
 services:
 
-  herupa:
+  herupa-bot:
     build:
-      context: .
-      dockerfile: dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: herupa:latest
+    container_name: herupa-bot
+    env_file: .env
     environment:
-      DISCORD_TOKEN: ${DISCORD_TOKEN}
-      GITHUB_PAT: ${GITHUB_PAT}
-      WEBHOOK_URL: ${WEBHOOK_URL}
-    container_name: herupa
-    entrypoint: /herupa/Herupa/start.sh
-    stdin_open: true
-    tty: true
-    restart: always
-    security_opt:
-      - seccomp=unconfined
+      MONGO_HOST: herupa_mongo:27017
+      TZ: ${TZ:-America/New_York}
+    volumes:
+      - ..:/app
+    working_dir: /app/Herupa
+    command: python bot.py
+    restart: unless-stopped
     depends_on:
+      - herupa_mongo
+
+  herupa-web:
+    image: herupa:latest
+    container_name: herupa-web
+    env_file: .env
+    environment:
+      MONGO_HOST: herupa_mongo:27017
+      TZ: ${TZ:-America/New_York}
+    volumes:
+      - ..:/app
+    working_dir: /app/web
+    command: python -m uvicorn app:app --host 0.0.0.0 --port 8462
+    ports:
+      - "8462:8462"
+    restart: unless-stopped
+    depends_on:
+      - herupa-bot        # herupa-bot's build step produces the shared image
       - herupa_mongo
 
   herupa_mongo:
     image: mongo:4.4.18
-    restart: always
+    container_name: herupa-mongo
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin # change this if you want
-      MONGO_INITDB_ROOT_PASSWORD: admin # change this if you want
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-admin}
+    volumes:
+      - mongo_data:/data/db
+    # Only reachable from the host itself (mongosh/debugging); the bot and
+    # web containers talk to it over the compose network instead.
     ports:
-      - 27017:27017
+      - "127.0.0.1:27017:27017"
+    restart: unless-stopped
+
+volumes:
+  mongo_data:

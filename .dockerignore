@@ -1,0 +1,8 @@
+# Build context only needs Herupa/requirements.txt and patches/ - the code
+# itself is bind-mounted at runtime, not baked into the image.
+.git
+assets
+web
+Herupa/cogs
+Herupa/audio_repo
+queue.json

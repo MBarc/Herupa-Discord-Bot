@@ -12,7 +12,9 @@ cd Herupa-Discord-Bot
 ./scripts/setup.sh
 ```
 
-It installs system and Python dependencies (including the voice-receive fork plus the `patches/voice_recv-dave` overlay that `$mock` needs), starts MongoDB in Docker, prompts for the Discord tokens and web password, installs the `herupa-bot` and `herupa-web` systemd services, and sets up the daily yt-dlp auto-updater cron. Data is not migrated: a fresh host starts with an empty database (levels, birthdays, tickets, and shop purchases start over).
+Everything runs in Docker. The script installs Docker itself if needed, prompts for the Discord tokens and web password (written to `docker/.env`), builds Herupa's image (Python 3.11 with ffmpeg/libopus, all pip dependencies, and the `patches/voice_recv-dave` overlay that `$mock` needs), and starts the three containers: `herupa-bot`, `herupa-web` (port 8462), and `herupa-mongo`. It also installs a daily cron that keeps yt-dlp fresh inside the container.
+
+The repo is bind-mounted into the containers, so editing a cog on the host hot-reloads live without a rebuild; rebuild the image only when `Herupa/requirements.txt` or `patches/` change. Data is not migrated: a fresh host starts with an empty database (levels, birthdays, tickets, and shop purchases start over). Bot logs: `docker logs -f herupa-bot`.
 
 ### Commands
 avatarpic {@member}: Herupa will respond with the avatar pic of the member mentioned.\
