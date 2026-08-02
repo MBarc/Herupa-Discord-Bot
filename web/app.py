@@ -1083,50 +1083,68 @@ def minecraft(request: Request):
     for rid, group in (mc.get("role_groups") or {}).items():
         mappings.append({"role_id": rid, "group": group,
                          "missing": rid not in role_names})
+    world_rows = [{"world": w, "channel_id": str(wc.get("channel_id") or "")}
+                  for w, wc in (mc.get("worlds") or {}).items()]
     return page(request, "minecraft.html", feature_off=False, configured=True,
                 online=online, players=players, wl_rows=wl_rows, roles=roles,
                 mappings=mappings, address=mc.get("address") or mc.get("rcon_host"),
-                channels=text_channels(gid),
-                bridge_channel_id=mc.get("bridge_channel_id"))
+                channels=text_channels(gid), world_rows=world_rows,
+                playlist_channel_id=str(mc.get("playerlist_channel_id") or ""))
 
 
 @app.post("/minecraft/bridge")
-def minecraft_bridge(request: Request, channel_id: str = Form("none")):
+def minecraft_bridge(request: Request, world: List[str] = Form([]),
+                     world_channel_id: List[str] = Form([]),
+                     playlist_channel_id: str = Form("")):
     if (r := guard(request)):
         return r
     gid = current_gid(request)
     mc = mc_conf(gid)
     if mc is None:
         return back("/minecraft", err="No Minecraft server is configured for this server.")
-    if channel_id == "none":
-        mongo["accounts"]["config"].update_one(
-            {"guild_id": gid}, {"$unset": {"minecraft.bridge_channel_id": ""}})
-        audit("minecraft.bridge", f"off in {gid}")
-        return back("/minecraft", ok="Bridge turned off: Discord messages no longer "
-                                     "relay in game. The in-game feed keeps posting "
-                                     "until the minecraft feature (or its webhook) "
-                                     "is removed.")
-    if channel_id not in {c["id"] for c in text_channels(gid)}:
-        return back("/minecraft", err="That channel doesn't exist here.")
-    mongo["accounts"]["config"].update_one(
-        {"guild_id": gid},
-        {"$set": {"minecraft.bridge_channel_id": channel_id}}, upsert=True)
-    note = ""
-    wid = mc.get("bridge_webhook_id")
-    if wid:
-        # The game->Discord feed posts to this webhook, so move it too and
-        # the whole bridge follows the channel.
-        try:
-            api("PATCH", f"/webhooks/{wid}", {"channel_id": channel_id})
-        except RuntimeError as e:
-            note = f" But the in-game feed's webhook wouldn't move: {e}"
-    else:
-        note = (" But I don't know this server's bridge webhook "
-                "(no bridge_webhook_id in the config), so the in-game feed "
-                "stays where it was.")
-    audit("minecraft.bridge", f"-> {channel_id} in {gid}")
-    return back("/minecraft", ok="Bridge moved: that channel now talks to the "
-                                 "Minecraft server both ways." + note)
+    valid = {c["id"] for c in text_channels(gid)}
+    worlds = mc.get("worlds") or {}
+    sets, notes, moved = {}, [], 0
+    for w, cid in zip(world, world_channel_id):
+        wc = worlds.get(w)
+        if wc is None or cid not in valid or str(wc.get("channel_id")) == cid:
+            continue
+        sets[f"minecraft.worlds.{w}.channel_id"] = cid
+        moved += 1
+        # The game->Discord feed posts to this world's webhook, so move it
+        # too and the whole world follows the channel.
+        wid = wc.get("webhook_id")
+        if wid:
+            try:
+                api("PATCH", f"/webhooks/{wid}", {"channel_id": cid})
+            except RuntimeError as e:
+                notes.append(f"{w}'s in-game feed wouldn't move: {e}")
+        else:
+            notes.append(f"{w} has no webhook recorded; its in-game feed "
+                         "stays where it was.")
+    unsets = {}
+    if (playlist_channel_id and playlist_channel_id in valid
+            and playlist_channel_id != str(mc.get("playerlist_channel_id"))):
+        sets["minecraft.playerlist_channel_id"] = playlist_channel_id
+        unsets["minecraft.playerlist_message_id"] = ""
+        old_ch, old_msg = mc.get("playerlist_channel_id"), mc.get("playerlist_message_id")
+        if old_ch and old_msg:
+            try:
+                api("DELETE", f"/channels/{old_ch}/messages/{old_msg}")
+            except RuntimeError:
+                pass
+        moved += 1
+    if not sets:
+        return back("/minecraft", ok="Nothing to change.")
+    update = {"$set": sets}
+    if unsets:
+        update["$unset"] = unsets
+    mongo["accounts"]["config"].update_one({"guild_id": gid}, update, upsert=True)
+    audit("minecraft.bridge", f"{moved} change(s) in {gid}")
+    msg = f"Saved {moved} bridge change(s). Herupa's side applies within 30 seconds."
+    if notes:
+        msg += " " + " ".join(notes)
+    return back("/minecraft", ok=msg)
 
 
 @app.post("/minecraft/roles")

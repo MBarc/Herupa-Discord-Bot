@@ -29,15 +29,37 @@
 
 <section class="card">
   <h2>Chat bridge</h2>
-  <p class="hint">In-game chat, joins, deaths, and advancements post into this channel, and messages typed there are relayed in game. Moving it moves both directions (the feed's webhook follows). "(off)" stops the Discord-to-game relay; the in-game feed keeps posting until the minecraft feature is turned off. Also works in Discord: <span class="mono">$mcbridge here / #channel / off</span>.</p>
-  <form method="post" action="/minecraft/bridge" class="inline-form">
-    <select name="channel_id">
-      <option value="none" {{ 'selected' if not bridge_channel_id }}>(off)</option>
-      {% for c in channels %}
-      <option value="{{ c.id }}" {{ 'selected' if c.id == bridge_channel_id }}>{{ c.label }}</option>
-      {% endfor %}
-    </select>
-    <button class="btn btn-primary btn-small" type="submit">Save</button>
+  <p class="hint">One channel per world: in-game chat, joins, deaths, and advancements from a world post into its channel, and messages typed there are relayed only to that world's players. Moving a world moves both directions (its webhook follows). The player list is a self-updating embed showing who's online in which world. Also works in Discord: <span class="mono">$mcbridge &lt;world&gt; here / #channel</span>.</p>
+  <form method="post" action="/minecraft/bridge">
+    <table class="mc-map">
+      <thead><tr><th>World</th><th>Channel</th></tr></thead>
+      <tbody>
+        {% for row in world_rows %}
+        <tr>
+          <td class="mono">{{ row.world }}<input type="hidden" name="world" value="{{ row.world }}"></td>
+          <td>
+            <select name="world_channel_id">
+              {% for c in channels %}
+              <option value="{{ c.id }}" {{ 'selected' if c.id == row.channel_id }}>{{ c.label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <td class="mono">player list</td>
+          <td>
+            <select name="playlist_channel_id">
+              <option value="" {{ 'selected' if not playlist_channel_id }}>(not set)</option>
+              {% for c in channels %}
+              <option value="{{ c.id }}" {{ 'selected' if c.id == playlist_channel_id }}>{{ c.label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <button class="btn btn-primary btn-small" type="submit">Save bridge</button>
   </form>
 </section>
 

@@ -188,7 +188,7 @@ class Help(commands.Cog):
                 "$project delete": "Pick a project from a list and delete it, forum and task records included (asks for confirmation).",
                 "$project digest": "Send the morning project digest to the current channel ($project digest off stops it).",
                 "$mcroles": "Map Discord roles to Minecraft (LuckPerms) groups for linked members ($mcroles set/remove works inline).",
-                "$mcbridge": "Choose the channel the Minecraft chat bridge lives in ($mcbridge here / #channel / off).",
+                "$mcbridge": "Show the Minecraft bridge's world-to-channel map, or move one ($mcbridge <world> here / #channel; playerlist too).",
                 "$ticketreload": "Re-read the ticket config after editing it in Mongo.",
                 "$roomreload": "Re-read the rooms config after editing it in Mongo.",
             }))
