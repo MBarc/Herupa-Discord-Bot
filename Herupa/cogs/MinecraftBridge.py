@@ -18,8 +18,14 @@ accounts config that AccountLink owns (db "accounts", collection "config"):
   "bridge_channel_id": "123..."    relay messages from this channel
   "bridge_webhook_id": "456..."    the tailer's webhook (so moves follow)
 plus the existing rcon_host / rcon_port / rcon_password keys. No block, or
-no bridge_channel_id, means no bridge for that guild. Config is read per
-message (bridge traffic is low-volume, matching AccountLink).
+no bridge_channel_id, means no bridge for that guild.
+
+COST WHEN IDLE: none worth mentioning. There is no background loop, and the
+on_message listener (which fires for every guild message) checks the cheap
+in-memory $feature switch FIRST, then a 30-second config cache -- a guild
+with the feature off, or with no server configured, costs at most one Mongo
+read per 30s, not one per message. $mcbridge invalidates the cache so its
+own changes apply instantly; web UI changes apply within the 30s.
 
 CHOOSING THE CHANNEL -- $mcbridge (managers only; also on the web UI's
 Minecraft page): bare = current status, "here" or a #channel = move the
@@ -36,6 +42,7 @@ whitelist sync.
 import json
 import sys
 import os
+import time
 
 import discord
 from discord.ext import commands
@@ -48,6 +55,7 @@ from tools.HerupaMongo import HerupaMongo
 from tools.MinecraftRcon import rcon
 
 RELAY_MAX = 256  # keep in-game chat readable; Discord essays get cut
+CONF_TTL = 30    # seconds a guild's minecraft config stays cached
 
 
 class MinecraftBridge(commands.Cog):
@@ -57,6 +65,7 @@ class MinecraftBridge(commands.Cog):
         self.mongo = HerupaMongo()
         self.db = "accounts"
         self.config_col = "config"
+        self._cache = {}  # guild_id -> (expires_monotonic, mc block | None)
 
     # ----------------------------- config helpers -----------------------------
 
@@ -68,6 +77,16 @@ class MinecraftBridge(commands.Cog):
                 mc = doc.get("minecraft")
                 return mc if isinstance(mc, dict) else None
         return None
+
+    def _mc_cached(self, guild_id):
+        gid = str(guild_id)
+        hit = self._cache.get(gid)
+        now = time.monotonic()
+        if hit and hit[0] > now:
+            return hit[1]
+        mc = self._mc_conf(gid)
+        self._cache[gid] = (now + CONF_TTL, mc)
+        return mc
 
     def _feature_on(self, guild_id):
         fm = self.client.get_cog("FeatureManager")
@@ -131,6 +150,7 @@ class MinecraftBridge(commands.Cog):
         if where.lower() == "off":
             col.update_one({"guild_id": str(ctx.guild.id)},
                            {"$unset": {"minecraft.bridge_channel_id": ""}})
+            self._cache.pop(str(ctx.guild.id), None)
             await ctx.send("⛏️ Bridge off: messages here no longer reach the "
                            "game. The in-game feed still posts to its channel; "
                            "turn off the `minecraft` feature (or remove the "
@@ -149,6 +169,7 @@ class MinecraftBridge(commands.Cog):
         col.update_one({"guild_id": str(ctx.guild.id)},
                        {"$set": {"minecraft.bridge_channel_id": str(channel.id)}},
                        upsert=True)
+        self._cache.pop(str(ctx.guild.id), None)
         note = await self._move_webhook(mc, channel)
         await ctx.send(f"⛏️ The Minecraft chat bridge now lives in "
                        f"{channel.mention}: messages there show up in game, "
@@ -158,16 +179,19 @@ class MinecraftBridge(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        # Guard order matters: this fires for EVERY guild message, so the
+        # free checks and the in-memory feature switch come before any
+        # config lookup, and the lookup itself is cached.
         if message.guild is None or message.author.bot or message.webhook_id:
             return
         if message.content.startswith("$"):
             return
-        mc = self._mc_conf(message.guild.id)
-        if mc is None or not mc.get("bridge_channel_id"):
+        if not self._feature_on(message.guild.id):
+            return
+        mc = self._mc_cached(message.guild.id)
+        if not mc or not mc.get("bridge_channel_id"):
             return
         if str(message.channel.id) != str(mc["bridge_channel_id"]):
-            return
-        if not self._feature_on(message.guild.id):
             return
 
         text = message.clean_content.strip()
