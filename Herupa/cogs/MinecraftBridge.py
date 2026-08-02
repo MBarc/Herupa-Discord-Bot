@@ -249,14 +249,16 @@ class MinecraftBridge(commands.Cog):
             for world, wc in (mc.get("worlds") or {}).items():
                 names = sorted(grouped.pop(world, []), key=str.lower)
                 # The channel mention up top is clickable: one tap from
-                # seeing who's in a world to talking with them.
-                value = f"<#{wc.get('channel_id')}>\n"
-                embed.add_field(name=world,
-                                value=value + ("\n".join(names) if names
-                                               else "*empty*"))
+                # seeing who's in a world to talking with them. The
+                # zero-width-space line keeps sections apart when stacked.
+                value = (f"<#{wc.get('channel_id')}>\n"
+                         + ("\n".join(names) if names else "*empty*")
+                         + "\n\u200b")
+                embed.add_field(name=world, value=value)
             for world, names in sorted(grouped.items()):
                 embed.add_field(name=world,
-                                value="\n".join(sorted(names, key=str.lower)))
+                                value="\n".join(sorted(names, key=str.lower))
+                                      + "\n\u200b")
         else:
             embed.description = f"🔴 `{address}` is unreachable right now."
         embed.set_footer(text="Updates every couple of minutes · "
