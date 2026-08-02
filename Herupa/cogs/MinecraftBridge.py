@@ -246,10 +246,14 @@ class MinecraftBridge(commands.Cog):
             grouped = {}
             for name, w in mapping.items():
                 grouped.setdefault(world_key(w), []).append(name)
-            for world in (mc.get("worlds") or {}):
+            for world, wc in (mc.get("worlds") or {}).items():
                 names = sorted(grouped.pop(world, []), key=str.lower)
+                # The channel mention up top is clickable: one tap from
+                # seeing who's in a world to talking with them.
+                value = f"<#{wc.get('channel_id')}>\n"
                 embed.add_field(name=world,
-                                value="\n".join(names) if names else "*empty*")
+                                value=value + ("\n".join(names) if names
+                                               else "*empty*"))
             for world, names in sorted(grouped.items()):
                 embed.add_field(name=world,
                                 value="\n".join(sorted(names, key=str.lower)))
