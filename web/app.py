@@ -978,7 +978,7 @@ FEATURES = [
     ("music", "the Hibiki DJ crew"),
     ("moderation", "$kick, $ban, and $timeout"),
     ("accounts", "$link, $verify, and $lookup"),
-    ("minecraft", "Minecraft account linking and server whitelist sync"),
+    ("minecraft", "Minecraft account linking, whitelist sync, and the chat bridge"),
     ("birthdays", "$birthday and the daily wishes"),
     ("counting", "the counting game"),
     ("favorites", "favorite pings on voice join"),

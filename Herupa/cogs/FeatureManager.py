@@ -46,7 +46,7 @@ FEATURES = {
     # Sub-feature of accounts (no commands of its own): gates Minecraft
     # account linking entirely, plus the RCON whitelist sync for guilds
     # whose accounts config has a minecraft block.
-    "minecraft": {"cogs": [], "desc": "Minecraft account linking and server whitelist sync"},
+    "minecraft": {"cogs": [], "desc": "Minecraft account linking, whitelist sync, and the chat bridge"},
     "birthdays":  {"cogs": ["Birthday"], "desc": "$birthday and the daily wishes"},
     "counting":   {"cogs": ["Counting"], "desc": "the counting game"},
     "favorites":  {"cogs": ["Favorites"], "desc": "favorite pings on voice join"},
