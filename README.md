@@ -35,7 +35,6 @@ removefavorite: Remove member from your favorites. They will no longer receive n
 myfavorites: See your list of favorites. This command works in either a public text channel or Herupa's DMs\
 createroom {@members}: Create a private voice chat with the members specified. Specifying members is optional.\
 add2room {@members}: Add members to private voice chat after the room has been created.\
-kanye: Get a random Kanye West quote.\
 
 ### Background Tasks
 AFK: Herupa automatically keeps track of how long members are AFK and moves them to the appropriate AFK voice channels.\

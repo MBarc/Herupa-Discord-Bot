@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Projects{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Projects</h1>
+  <p class="page-sub">Task boards for this server's project forums. Click a card to open its thread in Discord.</p>
+</header>
+
+{% if feature_off %}
+<section class="card">
+  <h2>⛔ Projects are turned off in this server</h2>
+  <p class="hint">An admin can turn them on in Discord with <span class="mono">$feature on projects</span>.</p>
+</section>
+{% elif not boards %}
+<section class="card">
+  <p class="empty">No projects yet. Create one in Discord with <span class="mono">$project create</span>.</p>
+</section>
+{% else %}
+{% for b in boards %}
+<section class="card">
+  <div class="board-head">
+    <h2>🗂️ {{ b.name }}</h2>
+    <span class="hint">{{ b.open }} open · {{ b.done_total }} done ·
+      <a href="{{ b.forum_url }}" target="_blank" rel="noopener">open forum ↗</a></span>
+  </div>
+  <div class="kanban">
+    {% for key, emoji, label in statuses %}
+    <div class="kanban-col">
+      <div class="kanban-col-head">
+        <span>{{ emoji }} {{ label }}</span>
+        <span class="kanban-count">{{ b.cols[key]|length }}{% if key == 'done' and b.done_total > b.cols['done']|length %} of {{ b.done_total }}{% endif %}</span>
+      </div>
+      {% for c in b.cols[key] %}
+      <a class="kanban-card {{ 'is-done' if key == 'done' }}" href="{{ c.url }}" target="_blank" rel="noopener">
+        <div class="kanban-title">{% if c.urgent %}🔥 {% endif %}{{ c.title }}</div>
+        <div class="kanban-meta">
+          {% if c.avatar %}<img src="{{ c.avatar }}" alt="" loading="lazy" class="kanban-avatar">{% endif %}
+          {% if c.assignee %}<span>{{ c.assignee }}</span>
+          {% else %}<span class="kanban-unassigned">unassigned</span>{% endif %}
+          {% if c.due %}<span class="kanban-due {{ 'overdue' if c.overdue }}">{{ c.due }}{% if c.overdue %} ⚠️{% endif %}</span>{% endif %}
+        </div>
+      </a>
+      {% endfor %}
+      {% if not b.cols[key] %}<p class="kanban-empty">nothing here</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}

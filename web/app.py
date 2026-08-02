@@ -19,6 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from typing import List
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Form, Request
@@ -29,8 +30,8 @@ from pymongo import MongoClient
 
 # ------------------------- config -------------------------
 
-GUILD_ID = "645847490020638720"           # Chill Club
-LOG_GUILD_ID = "1249872743520931870"      # dedicated logging server
+DEFAULT_GUILD_ID = "645847490020638720"   # Chill Club (Herupa's home server)
+LOG_GUILD_ID = "1249872743520931870"      # dedicated logging server (not selectable)
 TICKET_LOG_CHANNEL = "1525359402670886932"
 LAW_CHAT_ID = "803751026355863553"
 HERUPA_ID = "643562852741021707"
@@ -152,40 +153,64 @@ def cached(key, ttl, fn):
     return val
 
 
-def guild_channels():
-    return cached("channels", 60, lambda: api("GET", f"/guilds/{GUILD_ID}/channels"))
+def bot_guilds():
+    """Servers Herupa is in (minus the logging server) for the picker, cached
+    five minutes."""
+    def fetch():
+        out = []
+        for g in api("GET", "/users/@me/guilds"):
+            if g["id"] == LOG_GUILD_ID:
+                continue
+            out.append({"id": g["id"], "name": g["name"],
+                        "icon": (f"https://cdn.discordapp.com/icons/{g['id']}/{g['icon']}.png?size=64"
+                                 if g.get("icon") else "")})
+        return out
+    return cached("bot_guilds", 300, fetch)
 
 
-def text_channels():
-    out = [dict(c, label="#" + c["name"]) for c in guild_channels() if c["type"] in (0, 5)]
+def current_gid(request):
+    """The server the admin is working in: the picker cookie when it names a
+    guild Herupa is still in, else the home server."""
+    gid = request.cookies.get("hg", "")
+    if gid and any(g["id"] == gid for g in bot_guilds()):
+        return gid
+    return DEFAULT_GUILD_ID
+
+
+def guild_channels(gid):
+    return cached(f"channels:{gid}", 60, lambda: api("GET", f"/guilds/{gid}/channels"))
+
+
+def text_channels(gid):
+    out = [dict(c, label="#" + c["name"]) for c in guild_channels(gid) if c["type"] in (0, 5)]
     return sorted(out, key=lambda c: c["position"])
 
 
-def messageable_channels():
+def messageable_channels(gid):
     """Text channels plus voice and stage chats (they take messages too)."""
     voice = [dict(c, label="🔊 " + c["name"])
-             for c in guild_channels() if c["type"] in (2, 13)]
-    return text_channels() + sorted(voice, key=lambda c: c["position"])
+             for c in guild_channels(gid) if c["type"] in (2, 13)]
+    return text_channels(gid) + sorted(voice, key=lambda c: c["position"])
 
 
-def guild_roles():
-    return cached("roles", 60, lambda: api("GET", f"/guilds/{GUILD_ID}/roles"))
+def guild_roles(gid):
+    return cached(f"roles:{gid}", 60, lambda: api("GET", f"/guilds/{gid}/roles"))
 
 
-def herupa_top_position():
-    member = cached("me_member", 300,
-                    lambda: api("GET", f"/guilds/{GUILD_ID}/members/{HERUPA_ID}"))
-    positions = [r["position"] for r in guild_roles() if r["id"] in member["roles"]]
+def herupa_top_position(gid):
+    member = cached(f"me_member:{gid}", 300,
+                    lambda: api("GET", f"/guilds/{gid}/members/{HERUPA_ID}"))
+    positions = [r["position"] for r in guild_roles(gid) if r["id"] in member["roles"]]
     return max(positions) if positions else 0
 
 
-def assignable_roles():
+def assignable_roles(gid):
     """Roles a self-assign panel may offer: nothing managed, dangerous, or
     at/above Herupa's own top role."""
-    top = herupa_top_position()
+    top = herupa_top_position(gid)
     out = []
-    for r in guild_roles():
-        if r["id"] == GUILD_ID or r.get("managed"):
+    for r in guild_roles(gid):
+        if r["id"] == gid or r.get("managed"):
             continue
         if int(r["permissions"]) & DANGEROUS_PERMS:
             continue
@@ -195,12 +220,12 @@ def assignable_roles():
     return sorted(out, key=lambda r: -r["position"])
 
 
-def all_members():
+def all_members(gid):
     """Every guild member (paginated REST list), cached five minutes."""
     def fetch():
         out, after = {}, "0"
         while True:
-            batch = api("GET", f"/guilds/{GUILD_ID}/members?limit=1000&after={after}")
+            batch = api("GET", f"/guilds/{gid}/members?limit=1000&after={after}")
             if not batch:
                 return out
             for m in batch:
@@ -215,7 +240,7 @@ def all_members():
             if len(batch) < 1000:
                 return out
             after = batch[-1]["user"]["id"]
-    return cached("all_members", 300, fetch)
+    return cached(f"all_members:{gid}", 300, fetch)
 
 
 _NAMES = {}
@@ -227,10 +252,14 @@ def display_name(user_id):
     if hit and hit[0] > time.time():
         return hit[1]
     try:
-        m = api("GET", f"/guilds/{GUILD_ID}/members/{user_id}")
+        m = api("GET", f"/guilds/{DEFAULT_GUILD_ID}/members/{user_id}")
         name = m.get("nick") or m["user"].get("global_name") or m["user"]["username"]
     except RuntimeError:
-        name = f"user {user_id}"
+        try:
+            u = api("GET", f"/users/{user_id}")
+            name = u.get("global_name") or u["username"]
+        except RuntimeError:
+            name = f"user {user_id}"
     _NAMES[user_id] = (time.time() + 600, name)
     return name
 
@@ -345,6 +374,12 @@ def fmt_eastern(dt_utc):
             .strftime("%b %d %Y, %I:%M %p"))
 
 
+def feature_disabled(gid, feature):
+    """Mirror of the bot's $feature toggles (Mongo features/config)."""
+    doc = mongo["features"]["config"].find_one({"guild_id": str(gid)}) or {}
+    return feature in [f.lower() for f in doc.get("disabled", [])]
+
+
 def audit(action, detail):
     mongo["webui"]["audit"].insert_one(
         {"ts": datetime.utcnow(), "action": action, "detail": detail})
@@ -354,7 +389,25 @@ def page(request, name, **ctx):
     ctx.setdefault("ok", request.query_params.get("ok", ""))
     ctx.setdefault("err", request.query_params.get("err", ""))
     ctx["active"] = name.split(".")[0]
+    # Server picker in the sidebar: every page knows the guild list and which
+    # one is selected.
+    try:
+        ctx.setdefault("guilds", bot_guilds())
+    except RuntimeError:
+        ctx.setdefault("guilds", [])
+    ctx.setdefault("gid", current_gid(request))
     return templates.TemplateResponse(request, name, ctx)
+
+
+@app.get("/guild/select")
+def guild_select(request: Request, id: str = ""):
+    if (r := guard(request)):
+        return r
+    dest = request.headers.get("referer") or "/"
+    resp = RedirectResponse(dest, status_code=303)
+    if any(g["id"] == id for g in bot_guilds()):
+        resp.set_cookie("hg", id, max_age=365 * 86400, httponly=True, samesite="lax")
+    return resp
 
 
 def back(path, ok=None, err=None):
@@ -395,12 +448,13 @@ def dashboard(request: Request):
         checks["discord"] = False
         checks["discord_ms"] = 0
 
+    gid = current_gid(request)
     try:
-        g = cached("guild", 120, lambda: api("GET", f"/guilds/{GUILD_ID}?with_counts=true"))
+        g = cached(f"guild:{gid}", 120, lambda: api("GET", f"/guilds/{gid}?with_counts=true"))
         members = g.get("approximate_member_count", 0)
         online = g.get("approximate_presence_count", 0)
         gname = g.get("name", "")
-        icon = (f"https://cdn.discordapp.com/icons/{GUILD_ID}/{g['icon']}.png?size=64"
+        icon = (f"https://cdn.discordapp.com/icons/{gid}/{g['icon']}.png?size=64"
                 if g.get("icon") else "")
     except Exception:
         members = online = 0
@@ -426,8 +480,22 @@ def dashboard(request: Request):
 def schedule(request: Request):
     if (r := guard(request)):
         return r
+    gid = current_gid(request)
+    # Channel labels across every server, plus which guild owns each channel,
+    # so the list can be filtered to the selected server.
+    chan_labels, chan_guild = {}, {}
+    for g in bot_guilds():
+        try:
+            for c in messageable_channels(g["id"]):
+                chan_labels[c["id"]] = c["label"]
+                chan_guild[c["id"]] = g["id"]
+        except RuntimeError:
+            pass
     docs = list(mongo["webui"]["scheduled"].find().sort([("enabled", -1), ("next_fire", 1)]))
-    chan_labels = {c["id"]: c["label"] for c in messageable_channels()}
+    # Keep DM schedules (not tied to a server) and this server's channel sends.
+    docs = [d for d in docs
+            if d.get("user_id")
+            or chan_guild.get(str(d.get("channel_id")), gid) == gid]
     for d in docs:
         d["id"] = str(d["_id"])
         d["when"] = fmt_eastern(d.get("next_fire"))
@@ -445,16 +513,16 @@ def schedule(request: Request):
                "dm_name": d.get("dm_name", ""), "embed": d.get("embed"),
                "when": d["when"], "last": d["last"]} for d in docs]
     events_json = json.dumps(events).replace("<", "\\u003c")
-    members = all_members()
+    members = all_members(gid)
     bdays = []
-    for b in mongo["birthdays"]["dates"].find():
-        info = members.get(b["_id"])
+    for b in mongo["birthdays"]["dates"].find({"guild_id": gid}):
+        info = members.get(b["user_id"])
         if info and info.get("bot"):
             continue
         bdays.append({"name": info["name"] if info else b.get("name", "member"),
                       "month": b["month"], "day": b["day"]})
     bdays_json = json.dumps(bdays).replace("<", "\\u003c")
-    return page(request, "schedule.html", docs=docs, channels=messageable_channels(),
+    return page(request, "schedule.html", docs=docs, channels=messageable_channels(gid),
                 events_json=events_json, bdays_json=bdays_json)
 
 
@@ -551,7 +619,7 @@ def schedule_delete(request: Request, doc_id: str = Form(...)):
 def composer(request: Request):
     if (r := guard(request)):
         return r
-    return page(request, "composer.html", channels=messageable_channels())
+    return page(request, "composer.html", channels=messageable_channels(current_gid(request)))
 
 
 @app.post("/composer/send")
@@ -579,8 +647,8 @@ def composer_send(request: Request, channel_id: str = Form(...), content: str = 
         api("POST", f"/channels/{channel_id}/messages", body)
     except RuntimeError as e:
         return back("/composer", err=str(e))
-    label = next((c["label"] for c in messageable_channels() if c["id"] == channel_id),
-                 channel_id)
+    label = next((c["label"] for c in messageable_channels(current_gid(request))
+                  if c["id"] == channel_id), channel_id)
     audit("composer.send", f"-> {label}")
     return back("/composer", ok=f"Sent to {label}.")
 
@@ -591,10 +659,13 @@ def composer_send(request: Request, channel_id: str = Form(...), content: str = 
 def levels(request: Request, q: str = ""):
     if (r := guard(request)):
         return r
+    gid = current_gid(request)
+    if feature_disabled(gid, "leveling"):
+        return page(request, "levels.html", q="", results=[], roster=[], feature_off=True)
     results = []
     if q.strip():
         try:
-            found = api("GET", f"/guilds/{GUILD_ID}/members/search?"
+            found = api("GET", f"/guilds/{gid}/members/search?"
                         + urllib.parse.urlencode({"query": q.strip(), "limit": 8}))
         except RuntimeError:
             found = []
@@ -617,8 +688,9 @@ def levels(request: Request, q: str = ""):
                 "to_next": ceil - xp,
                 "streak": daily.get("streak", 0), "last_daily": daily.get("last", "never"),
             })
-    # full roster, leaderboard-ordered
-    members = all_members()
+    # full roster, leaderboard-ordered (XP is global; names resolve against the
+    # selected server, anyone not in it shows as left-the-server)
+    members = all_members(gid)
     streaks = {d["_id"]: d.get("streak", 0)
                for d in mongo["leveling"]["daily"].find({}, {"streak": 1})}
     roster = []
@@ -647,6 +719,8 @@ def levels_adjust(request: Request, user_id: str = Form(...), q: str = Form(""),
                   note: str = Form("")):
     if (r := guard(request)):
         return r
+    if feature_disabled(current_gid(request), "leveling"):
+        return back("/levels", err="Leveling is turned off in this server.")
     try:
         dl = int(levels_delta or 0)
         dx = int(xp_delta or 0)
@@ -716,7 +790,7 @@ def _avatar_of(uid, members):
 def dms(request: Request, u: str = "", q: str = ""):
     if (r := guard(request)):
         return r
-    members = all_members()
+    members = all_members(current_gid(request))
     convos = list(mongo["dms"]["conversations"].find().sort("last_ts", -1).limit(60))
     for c in convos:
         info = members.get(c["_id"])
@@ -727,7 +801,7 @@ def dms(request: Request, u: str = "", q: str = ""):
     found = []
     if q.strip():
         try:
-            hits = api("GET", f"/guilds/{GUILD_ID}/members/search?"
+            hits = api("GET", f"/guilds/{current_gid(request)}/members/search?"
                        + urllib.parse.urlencode({"query": q.strip(), "limit": 8}))
         except RuntimeError:
             hits = []
@@ -759,11 +833,11 @@ def dms_search(request: Request, q: str = ""):
     if not q.strip():
         return JSONResponse([])
     try:
-        hits = api("GET", f"/guilds/{GUILD_ID}/members/search?"
+        hits = api("GET", f"/guilds/{current_gid(request)}/members/search?"
                    + urllib.parse.urlencode({"query": q.strip(), "limit": 8}))
     except RuntimeError:
         return JSONResponse([], status_code=502)
-    members = all_members()
+    members = all_members(current_gid(request))
     return JSONResponse([
         {"id": m["user"]["id"],
          "name": m.get("nick") or m["user"].get("global_name") or m["user"]["username"],
@@ -837,13 +911,224 @@ def dms_send(request: Request, user_id: str = Form(...), content: str = Form(...
     return back(f"/dms?u={user_id}")
 
 
+# ------------------------- projects -------------------------
+
+PROJ_STATUSES = [("todo", "📋", "To Do"), ("doing", "🔨", "In Progress"),
+                 ("review", "👀", "Review"), ("done", "✅", "Done")]
+
+
+@app.get("/projects", response_class=HTMLResponse)
+def projects(request: Request):
+    if (r := guard(request)):
+        return r
+    gid = current_gid(request)
+    if feature_disabled(gid, "projects"):
+        return page(request, "projects.html", feature_off=True, boards=[],
+                    statuses=PROJ_STATUSES)
+    conf = mongo["projects"]["config"].find_one({"guild_id": gid}) or {}
+    forums = conf.get("forums", {})
+    members = all_members(gid) if forums else {}
+    # Same "overdue" clock as the cog: the guild's projects timezone, UTC default.
+    try:
+        proj_tz = ZoneInfo(conf.get("timezone") or "UTC")
+    except (KeyError, ValueError):
+        proj_tz = ZoneInfo("UTC")
+    today = datetime.now(proj_tz).date().isoformat()
+    boards = []
+    for fid, fc in sorted(forums.items(), key=lambda kv: kv[1]["name"].casefold()):
+        docs = list(mongo["projects"]["tasks"].find({"guild_id": gid, "forum_id": fid}))
+        cols = {key: [] for key, _, _ in PROJ_STATUSES}
+        for d in docs:
+            status = d.get("status") if d.get("status") in cols else "todo"
+            info = members.get(d.get("assignee_id") or "")
+            cols[status].append({
+                "title": d.get("title", "untitled"),
+                "url": f"https://discord.com/channels/{gid}/{d['thread_id']}",
+                "assignee": info["name"] if info else None,
+                "avatar": info["avatar"] if info else None,
+                "due": d.get("due"),
+                "overdue": bool(d.get("due") and status != "done" and d["due"] < today),
+                "urgent": d.get("priority") == "urgent",
+                "completed_at": d.get("completed_at") or 0,
+                "created_at": d.get("created_at") or 0,
+            })
+        for key in ("todo", "doing", "review"):
+            cols[key].sort(key=lambda c: (c["due"] or "9999-99-99", -c["created_at"]))
+        done_total = len(cols["done"])
+        cols["done"].sort(key=lambda c: -c["completed_at"])
+        cols["done"] = cols["done"][:15]   # recent finishes only; the rest live in Discord
+        boards.append({
+            "name": fc["name"],
+            "forum_url": f"https://discord.com/channels/{gid}/{fid}",
+            "cols": cols, "done_total": done_total,
+            "open": sum(len(cols[k]) for k in ("todo", "doing", "review")),
+        })
+    return page(request, "projects.html", boards=boards, statuses=PROJ_STATUSES,
+                feature_off=False)
+
+
+# ------------------------- features -------------------------
+# Mirrors FEATURES in Herupa/cogs/FeatureManager.py (keep in sync). The bot
+# re-reads Mongo every 30s, so toggles here apply without a reload.
+
+FEATURES = [
+    ("leveling", "XP earning, $rank, $daily, $leaderboard, and the level shop"),
+    ("tickets", "the ticket panel and $whisper reports"),
+    ("rooms", "auto-created voice rooms and $crpm"),
+    ("music", "the Hibiki DJ crew"),
+    ("moderation", "$kick, $ban, and $timeout"),
+    ("accounts", "$link, $verify, and $lookup"),
+    ("minecraft", "Minecraft account linking and server whitelist sync"),
+    ("birthdays", "$birthday and the daily wishes"),
+    ("counting", "the counting game"),
+    ("favorites", "favorite pings on voice join"),
+    ("mock", "the $mock voice parrot"),
+    ("projects", "forum project boards, $task and $board"),
+    ("project-reminders", "DM assignees when their task is due today or tomorrow"),
+    ("project-nudges", "daily overdue reminders inside task threads"),
+    ("project-digest", "morning project summary to the digest channel"),
+]
+
+
+@app.get("/features", response_class=HTMLResponse)
+def features(request: Request):
+    if (r := guard(request)):
+        return r
+    gid = current_gid(request)
+    doc = mongo["features"]["config"].find_one({"guild_id": gid}) or {}
+    disabled = {f.lower() for f in doc.get("disabled", [])}
+    rows = [{"name": n, "desc": d, "on": n not in disabled} for n, d in FEATURES]
+    return page(request, "features.html", rows=rows)
+
+
+@app.post("/features/toggle")
+def features_toggle(request: Request, name: str = Form(...), state: str = Form(...)):
+    if (r := guard(request)):
+        return r
+    gid = current_gid(request)
+    if name not in {n for n, _ in FEATURES} or state not in ("on", "off"):
+        return back("/features", err="I don't know that feature.")
+    op = "$pull" if state == "on" else "$addToSet"
+    mongo["features"]["config"].update_one(
+        {"guild_id": gid}, {op: {"disabled": name}}, upsert=True)
+    audit("features.toggle", f"{name} -> {state} in {gid}")
+    return back("/features", ok=f"{name} is now {state}. "
+                               "Herupa picks it up within half a minute.")
+
+
+# ------------------------- minecraft -------------------------
+
+import asyncio
+import sys as _sys
+_sys.path.append(os.path.join(BASE, "..", "Herupa"))
+from tools.MinecraftRcon import rcon as mc_rcon  # noqa: E402
+
+MC_GROUP_RE = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
+
+
+def mc_conf(gid):
+    doc = mongo["accounts"]["config"].find_one({"guild_id": str(gid)}) or {}
+    mc = doc.get("minecraft")
+    return mc if isinstance(mc, dict) else None
+
+
+def mc_command(mc, command):
+    """One RCON command from the sync web process; raises on failure."""
+    password = mc.get("rcon_password") or os.environ.get("MC_RCON_PASSWORD", "")
+    return asyncio.run(mc_rcon(mc.get("rcon_host", "minecraft.local"),
+                               int(mc.get("rcon_port", 25575)), password, command))
+
+
+def _strip_mc_colors(text):
+    return re.sub("§.", "", text or "")
+
+
+@app.get("/minecraft", response_class=HTMLResponse)
+def minecraft(request: Request):
+    if (r := guard(request)):
+        return r
+    gid = current_gid(request)
+    if feature_disabled(gid, "accounts") or feature_disabled(gid, "minecraft"):
+        return page(request, "minecraft.html", feature_off=True, configured=True)
+    mc = mc_conf(gid)
+    if mc is None:
+        return page(request, "minecraft.html", feature_off=False, configured=False)
+
+    online, players, whitelist = False, [], []
+    try:
+        reply = _strip_mc_colors(mc_command(mc, "list"))
+        online = True
+        if ":" in reply:
+            players = [p.strip() for p in reply.split(":", 1)[1].split(",") if p.strip()]
+        wl = _strip_mc_colors(mc_command(mc, "whitelist list"))
+        if ":" in wl:
+            whitelist = sorted((n.strip() for n in wl.split(":", 1)[1].split(",")
+                                if n.strip()), key=str.lower)
+    except Exception:
+        pass
+
+    members = all_members(gid)
+    linked = {}   # minecraft name (lower) -> member info
+    for l in mongo["accounts"]["links"].find({"guild_id": gid, "type": "minecraft"}):
+        info = members.get(l.get("user_id", ""))
+        if l.get("username"):
+            linked[l["username"].lower()] = info or {"name": "left the server?",
+                                                     "avatar": None}
+    wl_rows = [{"name": n, "member": linked.get(n.lower())} for n in whitelist]
+
+    roles = [r for r in sorted(guild_roles(gid), key=lambda x: -x["position"])
+             if r["id"] != gid and not r.get("managed")]
+    mappings = []
+    role_names = {r["id"]: r["name"] for r in roles}
+    for rid, group in (mc.get("role_groups") or {}).items():
+        mappings.append({"role_id": rid, "group": group,
+                         "missing": rid not in role_names})
+    return page(request, "minecraft.html", feature_off=False, configured=True,
+                online=online, players=players, wl_rows=wl_rows, roles=roles,
+                mappings=mappings, address=mc.get("address") or mc.get("rcon_host"))
+
+
+@app.post("/minecraft/roles")
+def minecraft_roles(request: Request, role_id: List[str] = Form([]),
+                    group: List[str] = Form([])):
+    if (r := guard(request)):
+        return r
+    gid = current_gid(request)
+    mc = mc_conf(gid)
+    if mc is None:
+        return back("/minecraft", err="No Minecraft server is configured for this server.")
+    valid_roles = {x["id"] for x in guild_roles(gid)}
+    new_map, bad = {}, []
+    for rid, grp in zip(role_id, group):
+        grp = grp.strip().lower()
+        if not rid or rid == "none" or not grp:
+            continue
+        if rid not in valid_roles or not MC_GROUP_RE.match(grp):
+            bad.append(grp or rid)
+            continue
+        new_map[rid] = grp
+    if bad:
+        return back("/minecraft", err="Skipped invalid entries: " + ", ".join(bad))
+    mongo["accounts"]["config"].update_one(
+        {"guild_id": gid}, {"$set": {"minecraft.role_groups": new_map}}, upsert=True)
+    for grp in set(new_map.values()):
+        try:
+            mc_command(mc, f"lp creategroup {grp}")
+        except Exception:
+            break
+    audit("minecraft.roles", f"{len(new_map)} mapping(s) in {gid}")
+    return back("/minecraft", ok=f"Saved {len(new_map)} mapping(s). "
+                                 "Herupa applies them within ten minutes.")
+
+
 # ------------------------- panels -------------------------
 
 @app.get("/panels", response_class=HTMLResponse)
 def panels(request: Request):
     if (r := guard(request)):
         return r
-    return page(request, "panels.html", channels=text_channels(), roles=assignable_roles())
+    gid = current_gid(request)
+    return page(request, "panels.html", channels=text_channels(gid), roles=assignable_roles(gid))
 
 
 @app.post("/panels/roles")
@@ -852,7 +1137,7 @@ def post_role_panel(request: Request, channel_id: str = Form(...), title: str = 
                     role_ids: list[str] = Form([])):
     if (r := guard(request)):
         return r
-    allowed = {x["id"]: x for x in assignable_roles()}
+    allowed = {x["id"]: x for x in assignable_roles(current_gid(request))}
     picked = [allowed[i] for i in role_ids if i in allowed][:25]
     if not picked:
         return back("/panels", err="Pick at least one role.")
@@ -885,23 +1170,28 @@ def post_role_panel(request: Request, channel_id: str = Form(...), title: str = 
 def post_ticket_panel(request: Request, channel_id: str = Form(...)):
     if (r := guard(request)):
         return r
-    embed = {
-        "title": "🎫 Need a hand? Open a ticket",
-        "color": BRAND,
-        "description": ("Pick the team you need and a private channel opens "
-                        "between you and them.\n\n"
-                        "🤖 **Tech Support**: server or bot issues\n"
-                        "👀 **Moderation**: report a problem with a member\n"
-                        "📸 **Media**: events, media, and content"),
-    }
-    rows = [{"type": 1, "components": [
-        {"type": 2, "style": 1, "label": "Tech Support", "emoji": {"name": "🤖"},
-         "custom_id": "herupa_ticket_tech"},
-        {"type": 2, "style": 4, "label": "Moderation", "emoji": {"name": "👀"},
-         "custom_id": "herupa_ticket_mod"},
-        {"type": 2, "style": 2, "label": "Media", "emoji": {"name": "📸"},
-         "custom_id": "herupa_ticket_media"},
-    ]}]
+    # Panel built from the selected server's ticket config (Mongo
+    # tickets/config), mirroring the bot's $ticketpanel output so the buttons
+    # bind to the same registered views.
+    gid = current_gid(request)
+    conf = mongo["tickets"]["config"].find_one({"guild_id": gid})
+    if not conf or not conf.get("teams"):
+        return back("/panels", err="Tickets are not configured for this server.")
+    styles = {"primary": 1, "secondary": 2, "success": 3, "danger": 4}
+    lines = ["Need a hand? Pick the team that fits and we'll open a private channel just for you.", ""]
+    buttons = []
+    for t in conf["teams"]:
+        lines.append(f"{t.get('emoji', '🎫')} **{t['label']}**: {t.get('blurb', '')}")
+        buttons.append({"type": 2, "style": styles.get(t.get("style"), 1),
+                        "label": t["label"], "emoji": {"name": t.get("emoji", "🎫")},
+                        "custom_id": f"herupa_ticket:{gid}:{t['key']}"})
+    lines += ["", "Your ticket will be visible only to you and the team you choose."]
+    if conf.get("anon_enabled", True):
+        lines += ["", "🤫 **Want to stay anonymous?** DM me `$whisper <your message>` "
+                      "instead and I'll open an anonymous ticket. Your name stays hidden."]
+    embed = {"title": "🎫 Open a Ticket", "color": 0x5865F2,
+             "description": "\n".join(lines)}
+    rows = [{"type": 1, "components": buttons[:5]}]
     try:
         msg = api("POST", f"/channels/{channel_id}/messages",
                   {"embeds": [embed], "components": rows})

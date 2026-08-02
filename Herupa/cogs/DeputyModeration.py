@@ -1,16 +1,36 @@
 '''
-Purpose: Restricted moderation commands for Deputies.
+Purpose: Restricted moderation commands for the junior mod tier.
 
-Deputies have NO native Kick/Ban permission on their Discord role, so these
-commands (which act with Herupa's own permissions) are their only way to
-remove a member. That routing is what makes the limits below enforceable:
+Junior mods (Chill Club: deputies; TerraNova: the Moderation Team) have NO
+native Kick/Ban permission on their Discord role, so these commands (which act
+with Herupa's own permissions) are their only way to remove a member. That
+routing is what makes the limits below enforceable:
 
-  - Kicks and bans share ONE budget: 3 removals per rolling hour, per deputy.
-  - A deputy may not kick/ban another staff member.
-  - Every action is logged to the law-chat channel.
+  - Kicks and bans share ONE budget: 3 removals per rolling hour, per mod
+    (per server).
+  - A restricted mod may not kick/ban another staff member.
+  - Every action is logged to the server's mod-log channel.
 
-Sheriff and Head Chill are unrestricted: they skip the budget and the
-staff-target check entirely (and keep their native Kick/Ban besides).
+Unrestricted roles (Chill Club: sheriff / head chill) and native admins skip
+the budget and the staff-target check entirely.
+
+MULTI-SERVER: driven by per-guild config in Mongo (db "moderation",
+collection "config", one doc per guild_id):
+
+    {
+      "guild_id": "645847490020638720",
+      "restricted_roles": ["deputy"],                  # the limited tier
+      "unrestricted_roles": ["sheriff", "head chill"], # skip all limits
+      "protected_roles": ["deputy", "sheriff", ...],   # restricted mods can't target these
+      "log_channel": "👮law-chat👮",                    # channel NAME in the guild
+      "removal_limit": 3,
+      "removal_window_seconds": 3600,
+      "escalation_name": "a Sheriff",                  # flavor for "limit reached" messages
+    }
+
+Config is read from Mongo on every command (moderation commands are rare), so
+edits apply immediately — no reload needed. Guilds with no config doc get a
+"not set up" message. Role/channel matching is case-insensitive.
 '''
 
 from discord.ext import commands
@@ -34,40 +54,48 @@ class DeputyModeration(commands.Cog):
     def __init__(self, client):
         self.client = client
 
-        # --- Chill Club role model (single-server) ---
-        self.deputy_role = "deputy"
-        self.unrestricted_roles = ["sheriff", "head chill"]   # skip all limits
-        # A deputy may not action anyone holding one of these roles.
-        self.staff_roles = ["deputy", "sheriff", "head chill", "servants"]
-
-        self.log_channel_name = "👮law-chat👮"
-
-        # --- Rate limit: shared kick+ban budget per deputy ---
-        self.removal_limit = 3
-        self.removal_window_seconds = 60 * 60   # rolling one hour
-
-        # --- Mongo persistence (survives bot restarts) ---
         self.dbName = "moderation"
+        self.config_collection = "config"
         self.removals_collection = "deputy_removals"
         self.mongo_instance = HerupaMongo()
 
     # ----------------------------- helpers -----------------------------
 
+    def _conf(self, guild_id):
+        gid = str(guild_id)
+        for doc in self.mongo_instance.returnCollectionEntries(
+                database_name=self.dbName, collection_name=self.config_collection):
+            if doc.get("guild_id") == gid:
+                return doc
+        return None
+
     def _has_role(self, member, names):
-        return any(role.name.lower() in names for role in member.roles)
+        low = {n.lower() for n in names}
+        return any(role.name.lower() in low for role in member.roles)
 
-    def _is_unrestricted(self, member):
-        return self._has_role(member, self.unrestricted_roles)
+    def _is_unrestricted(self, member, conf):
+        return self._has_role(member, conf.get("unrestricted_roles", [])) \
+            or member.guild_permissions.administrator
 
-    def _is_deputy(self, member):
-        return self.deputy_role in [role.name.lower() for role in member.roles]
+    def _is_restricted_mod(self, member, conf):
+        return self._has_role(member, conf.get("restricted_roles", []))
 
-    def _is_staff(self, member):
-        return self._has_role(member, self.staff_roles)
+    def _is_protected(self, member, conf):
+        return self._has_role(member, conf.get("protected_roles", []))
 
-    def _recent_removal_count(self, deputy_id):
-        '''Prune expired records, then count this deputy's removals in-window.'''
-        cutoff = int(time.time()) - self.removal_window_seconds
+    def is_mod(self, member):
+        """Public: is this member on the guild's moderation ladder at all?
+        Used by other cogs (Help, AccountLink) as the one definition of 'mod'."""
+        if member.guild_permissions.administrator:
+            return True
+        conf = self._conf(member.guild.id)
+        if conf is None:
+            return False
+        return self._is_unrestricted(member, conf) or self._is_restricted_mod(member, conf)
+
+    def _recent_removal_count(self, guild_id, mod_id, window_seconds):
+        '''Prune expired records, then count this mod's removals in-window.'''
+        cutoff = int(time.time()) - window_seconds
 
         # Drop everything older than the window so the collection stays small
         # and every remaining record is, by definition, inside the window.
@@ -81,14 +109,20 @@ class DeputyModeration(commands.Cog):
             database_name=self.dbName,
             collection_name=self.removals_collection,
         )
-        return sum(1 for e in entries if e.get("deputy_id") == deputy_id)
+        # Pre-multi-server records have no guild_id; those were all Chill Club's,
+        # and they expire within the hour anyway, so a missing value just counts
+        # toward whichever guild asks — harmless for one transition window.
+        return sum(1 for e in entries
+                   if e.get("deputy_id") == mod_id
+                   and e.get("guild_id", str(guild_id)) == str(guild_id))
 
-    def _record_removal(self, deputy_id, target_id, action, reason):
+    def _record_removal(self, guild_id, mod_id, target_id, action, reason):
         self.mongo_instance.addCollectionEntry(
             database_name=self.dbName,
             collection_name=self.removals_collection,
             payload={
-                "deputy_id": deputy_id,
+                "guild_id": str(guild_id),
+                "deputy_id": mod_id,
                 "target_id": target_id,
                 "action": action,
                 "reason": reason,
@@ -96,8 +130,10 @@ class DeputyModeration(commands.Cog):
             },
         )
 
-    async def _log(self, guild, text):
-        log_channel = get(guild.text_channels, name=self.log_channel_name)
+    async def _log(self, guild, conf, text):
+        name = (conf.get("log_channel") or "").lower()
+        log_channel = next(
+            (c for c in guild.text_channels if c.name.lower() == name), None)
         if log_channel:
             await log_channel.send(text)
 
@@ -105,17 +141,22 @@ class DeputyModeration(commands.Cog):
         '''Shared flow for kick and ban. `action` is "kick" or "ban".'''
 
         author = ctx.author
+        conf = self._conf(ctx.guild.id)
+        if conf is None:
+            await ctx.send("Moderation commands aren't set up for this server yet.")
+            return
 
         # 1) Authorisation: only the mod ladder may use these at all.
-        if not (self._is_unrestricted(author) or self._is_deputy(author)):
+        if not (self._is_unrestricted(author, conf) or self._is_restricted_mod(author, conf)):
             await ctx.send("You do not have the required role to use this command.")
             return
 
-        restricted = self._is_deputy(author) and not self._is_unrestricted(author)
+        restricted = self._is_restricted_mod(author, conf) \
+            and not self._is_unrestricted(author, conf)
 
-        # 2) Deputies cannot act on fellow staff.
-        if restricted and self._is_staff(member):
-            await ctx.send(f"Deputies cannot {action} another staff member.")
+        # 2) Restricted mods cannot act on fellow staff.
+        if restricted and self._is_protected(member, conf):
+            await ctx.send(f"You cannot {action} another staff member.")
             return
 
         # No one should be able to remove themselves via the command.
@@ -123,18 +164,21 @@ class DeputyModeration(commands.Cog):
             await ctx.send("You cannot use this command on yourself.")
             return
 
-        # 3) Deputies share a 3-per-hour kick+ban budget.
+        # 3) Restricted mods share a kick+ban budget per rolling window.
+        limit = conf.get("removal_limit", 3)
+        window = conf.get("removal_window_seconds", 3600)
+        escalation = conf.get("escalation_name", "a senior moderator")
         if restricted:
-            used = self._recent_removal_count(str(author.id))
-            if used >= self.removal_limit:
+            used = self._recent_removal_count(ctx.guild.id, str(author.id), window)
+            if used >= limit:
                 await ctx.send(
-                    f"You have hit your limit of {self.removal_limit} removals per hour. "
-                    "A Sheriff must take it from here."
+                    f"You have hit your limit of {limit} removals per hour. "
+                    f"{escalation[0].upper()}{escalation[1:]} must take it from here."
                 )
                 await self._log(
-                    ctx.guild,
+                    ctx.guild, conf,
                     f"⚠️ {author} was blocked from {action}ing {member}: hourly removal "
-                    f"limit ({self.removal_limit}) reached.",
+                    f"limit ({limit}) reached.",
                 )
                 return
 
@@ -151,10 +195,10 @@ class DeputyModeration(commands.Cog):
             await ctx.send(f"Failed to {action} the member. Error: {e}")
             return
 
-        # 5) Record (deputies only) and log (everyone).
+        # 5) Record (restricted mods only) and log (everyone).
         if restricted:
-            self._record_removal(str(author.id), str(member.id), action, reason)
-            remaining = self.removal_limit - self._recent_removal_count(str(author.id))
+            self._record_removal(ctx.guild.id, str(author.id), str(member.id), action, reason)
+            remaining = limit - self._recent_removal_count(ctx.guild.id, str(author.id), window)
             tail = f" ({remaining} removals left this hour)"
         else:
             tail = ""
@@ -164,17 +208,19 @@ class DeputyModeration(commands.Cog):
             delete_after=10,
         )
         await self._log(
-            ctx.guild,
+            ctx.guild, conf,
             f"{member} was {action}ned by {author}. Reason: {reason}",
         )
 
     # ----------------------------- commands -----------------------------
 
-    @commands.command(name="kick", description="Kick a member (rate-limited for deputies).")
+    @commands.command(name="kick", description="Kick a member (rate-limited for junior mods).")
+    @commands.guild_only()
     async def kick(self, ctx, member: discord.Member, *, reason: str):
         await self._remove(ctx, member, reason, "kick")
 
-    @commands.command(name="ban", description="Ban a member (rate-limited for deputies).")
+    @commands.command(name="ban", description="Ban a member (rate-limited for junior mods).")
+    @commands.guild_only()
     async def ban(self, ctx, member: discord.Member, *, reason: str):
         await self._remove(ctx, member, reason, "ban")
 

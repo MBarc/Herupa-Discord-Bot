@@ -17,13 +17,25 @@
       <img src="https://cdn.discordapp.com/avatars/643562852741021707/55f883fbbd65232460042ea2826dfea1.png?size=64" alt="" class="brand-avatar">
       <span class="brand-name">Herupa<span class="brand-sub">control room</span></span>
     </a>
+    {% if guilds and guilds|length > 1 %}
+    <form class="guild-pick" method="get" action="/guild/select" aria-label="Server">
+      <select name="id" onchange="this.form.submit()">
+        {% for g in guilds %}
+        <option value="{{ g.id }}" {{ 'selected' if g.id == gid }}>{{ g.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% endif %}
     <nav aria-label="Sections">
       <a href="/" class="{{ 'active' if active == 'dashboard' }}">Dashboard <span class="kana">概要</span></a>
       <a href="/schedule" class="{{ 'active' if active == 'schedule' }}">Schedule <span class="kana">予定</span></a>
       <a href="/composer" class="{{ 'active' if active == 'composer' }}">Composer <span class="kana">作成</span></a>
       <a href="/dms" class="{{ 'active' if active == 'dms' }}">DMs <span class="kana">ディーエム</span></a>
       <a href="/levels" class="{{ 'active' if active == 'levels' }}">Levels <span class="kana">レベル</span></a>
+      <a href="/projects" class="{{ 'active' if active == 'projects' }}">Projects <span class="kana">企画</span></a>
       <a href="/panels" class="{{ 'active' if active == 'panels' }}">Panels <span class="kana">パネル</span></a>
+      <a href="/minecraft" class="{{ 'active' if active == 'minecraft' }}">Minecraft <span class="kana">マイクラ</span></a>
+      <a href="/features" class="{{ 'active' if active == 'features' }}">Features <span class="kana">機能</span></a>
     </nav>
     <div class="sidebar-foot">
       <svg class="scene" viewBox="0 0 220 90" aria-hidden="true">

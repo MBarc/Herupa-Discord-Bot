@@ -139,11 +139,17 @@ class Leaderboard(commands.Cog):
     async def on_message(self, message):
         if message.author.bot or message.guild is None:
             return
+        fm = self.client.get_cog("FeatureManager")
+        if fm is not None and not fm.is_enabled(message.guild.id, "leveling"):
+            return
         self._bump(message.author.id, "messages", 1)
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         if member.bot:
+            return
+        fm = self.client.get_cog("FeatureManager")
+        if fm is not None and not fm.is_enabled(member.guild.id, "leveling"):
             return
         now = time.time()
         key = (member.guild.id, member.id)

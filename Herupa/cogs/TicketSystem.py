@@ -1,29 +1,54 @@
 '''
 Purpose: A button-driven ticketing system, plus anonymous reports.
 
-NORMAL TICKETS: a pinned panel (posted with $ticketpanel, run inside the
-create-a-ticket channel) shows three buttons. Clicking one opens a PRIVATE
-channel in the SAME category as the panel (the tickets category), named
+NORMAL TICKETS: a pinned panel (posted with $ticketpanel) shows one button per
+team. Clicking one opens a PRIVATE channel, named
 "<team emoji><opener's display name>", visible only to the opener and the
-routed team. One open ticket per user per team.
+routed team. One open ticket per user per team (per server).
 
 ANONYMOUS REPORTS: a member DMs Herupa `$whisper <message>` (DM-only) and picks
-a team.
-An anonymous ticket opens under the tickets category, routed to that team, but
-the reporter is NOT given access — they keep talking to the team through
-Herupa's DMs, which relays both ways (staff messages -> reporter DMs; reporter
-DMs -> channel as "Reporter"). A `//` line in the channel is an internal note,
-not relayed. One open anonymous ticket per user (a single shared DM channel).
-The reporter's identity is stored only in Mongo for relay — never shown in the
-channel or the transcript.
+a team (and, if they share more than one configured server with Herupa, which
+server it's for).
+An anonymous ticket opens routed to that team, but the reporter is NOT given
+access — they keep talking to the team through Herupa's DMs, which relays both
+ways (staff messages -> reporter DMs; reporter DMs -> channel as "Reporter").
+A `//` line in the channel is an internal note, not relayed. One open anonymous
+ticket per user (a single shared DM channel). The reporter's identity is stored
+only in Mongo for relay — never shown in the channel or the transcript.
 
 Staff use $claim / $add / $close inside any ticket (or the Close button). On
-close, a transcript is saved to the ticket-logs channel on the dedicated
-logging server (see tools/HerupaLogger) before the channel is deleted.
+close, a transcript is saved to the team's archive channel (or the ticket-logs
+channel on the dedicated logging server if no archive channel is configured)
+before the channel is deleted.
 
-Requires Herupa's role to have **Manage Channels** (it does) AND **Manage
-Roles** (needed to set the private per-channel permission overwrites).
-Single-server build for Chill Club — role names are hardcoded below.
+MULTI-SERVER: everything is driven by per-guild config in Mongo
+(db "tickets", collection "config", one doc per guild_id):
+
+    {
+      "guild_id": "645847490020638720",
+      "panel_manager_roles": ["head chill"],   # may post $ticketpanel (admins always can)
+      "anon_enabled": True,
+      "teams": [
+        {"key": "tech", "label": "Tech Support", "emoji": "🤖", "style": "primary",
+         "roles": ["techie manager", "techie"],  # see/reply/get pinged (case-insensitive)
+         "colour": 0x1ABC9C,
+         "blurb": "bots, integrations, game servers",   # panel embed line
+         "category_id": None,       # channel category ID (preferred: survives renames)
+         "category": None,          # channel category NAME fallback — if set and missing,
+                                    #   Herupa creates it once (hidden) and leaves it in
+                                    #   place; None -> panel's own category, falling back
+                                    #   to any category named *ticket*
+         "archive_channel": None},  # transcript channel NAME in the guild;
+                                    #   None -> HerupaLogger "ticket" (logging server)
+        ...
+      ]
+    }
+
+Edit the config in Mongo, then `$ticketreload` (admin) to apply without a
+restart. Guilds with no config doc get a polite "not set up" message.
+
+Requires Herupa's role to have **Manage Channels** AND **Manage Roles**
+(needed to set the private per-channel permission overwrites).
 '''
 
 import io
@@ -33,7 +58,6 @@ import time
 
 import discord
 from discord.ext import commands
-from discord.utils import get
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -43,23 +67,47 @@ from tools.HerupaMongo import HerupaMongo
 from tools.HerupaLogger import HerupaLogger
 
 
-# --- Routing config: button -> {team roles, label, look} ---------------------
-# Emoji match the per-team channels in the tickets category (🤖support🤖,
-# 👀moderation👀, 📸media📸) and are used to prefix each ticket channel's name.
-CATEGORIES = {
-    "tech": {"label": "Tech Support", "emoji": "🤖",
-             "roles": ["techie manager", "techie"], "colour": 0x1ABC9C},
-    "mod": {"label": "Moderation", "emoji": "👀",
-            "roles": ["head chill", "sheriff", "deputy"], "colour": 0xE74C3C},
-    "media": {"label": "Media", "emoji": "📸",
-              "roles": ["media manager", "media"], "colour": 0x9B59B6},
+BUTTON_STYLES = {
+    "primary": discord.ButtonStyle.primary,
+    "secondary": discord.ButtonStyle.secondary,
+    "success": discord.ButtonStyle.success,
+    "danger": discord.ButtonStyle.danger,
 }
-# Any of these roles (plus the opener and admins) may claim/add/close.
-ALL_STAFF = {r.lower() for c in CATEGORIES.values() for r in c["roles"]}
+
+
+def _find_role(guild, name):
+    """Role lookup by name, case-insensitive (config names may not match case)."""
+    low = name.lower()
+    return next((r for r in guild.roles if r.name.lower() == low), None)
 
 
 class TicketPanelView(discord.ui.View):
-    """Persistent panel with one button per team."""
+    """Persistent panel with one button per configured team.
+
+    custom_ids embed the guild + team key ("herupa_ticket:<guild_id>:<key>") so
+    one registered view per guild keeps every server's panel buttons working
+    across restarts."""
+
+    def __init__(self, cog, guild_id, teams):
+        super().__init__(timeout=None)
+        self.cog = cog
+        for team in teams:
+            button = discord.ui.Button(
+                label=team["label"], emoji=team.get("emoji"),
+                style=BUTTON_STYLES.get(team.get("style"), discord.ButtonStyle.primary),
+                custom_id=f"herupa_ticket:{guild_id}:{team['key']}")
+            button.callback = self._make_callback(team["key"])
+            self.add_item(button)
+
+    def _make_callback(self, team_key):
+        async def callback(interaction):
+            await self.cog.create_ticket(interaction, team_key)
+        return callback
+
+
+class LegacyPanelView(discord.ui.View):
+    """Keeps the pre-multi-server Chill Club panel message alive: its buttons
+    were posted with fixed custom_ids, so those ids must stay registered."""
 
     def __init__(self, cog):
         super().__init__(timeout=None)
@@ -94,38 +142,34 @@ class CloseView(discord.ui.View):
         await self.cog.close_from_interaction(interaction)
 
 
-class AnonTeamView(discord.ui.View):
-    """Transient team picker shown in the reporter's DMs after $whisper."""
+class AnonChoiceView(discord.ui.View):
+    """Transient picker shown in the reporter's DMs after $whisper: one button
+    per choice (used for both the server pick and the team pick)."""
 
-    def __init__(self, cog, user, content):
+    def __init__(self, choices, on_choose):
+        # choices: list of (key, label, emoji, style) — emoji/style may be None.
         super().__init__(timeout=300)
-        self.cog = cog
-        self.user = user
-        self.content = content
+        self.on_choose = on_choose
         self.message = None
+        for key, label, emoji, style in choices:
+            button = discord.ui.Button(
+                label=label, emoji=emoji,
+                style=BUTTON_STYLES.get(style, discord.ButtonStyle.secondary))
+            button.callback = self._make_callback(key)
+            self.add_item(button)
 
-    async def _choose(self, interaction, key):
-        await interaction.response.defer()
-        for child in self.children:
-            child.disabled = True
-        try:
-            await interaction.message.edit(content="🤫 Report sent — thank you.", view=self)
-        except discord.HTTPException:
-            pass
-        self.stop()
-        await self.cog.create_anon_ticket(self.user, self.content, key)
-
-    @discord.ui.button(label="Tech Support", emoji="🤖", style=discord.ButtonStyle.primary)
-    async def tech(self, interaction, button):
-        await self._choose(interaction, "tech")
-
-    @discord.ui.button(label="Moderation", emoji="👀", style=discord.ButtonStyle.danger)
-    async def mod(self, interaction, button):
-        await self._choose(interaction, "mod")
-
-    @discord.ui.button(label="Media", emoji="📸", style=discord.ButtonStyle.secondary)
-    async def media(self, interaction, button):
-        await self._choose(interaction, "media")
+    def _make_callback(self, key):
+        async def callback(interaction):
+            await interaction.response.defer()
+            for child in self.children:
+                child.disabled = True
+            try:
+                await interaction.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+            self.stop()
+            await self.on_choose(key)
+        return callback
 
     async def on_timeout(self):
         for child in self.children:
@@ -144,17 +188,18 @@ class TicketSystem(commands.Cog):
         self.client = client
         self.db = "tickets"
         self.col = "tickets"
+        self.config_col = "config"
         self.mongo = HerupaMongo()
-        self.log = HerupaLogger(client)  # transcripts go to the dedicated logging server
+        self.log = HerupaLogger(client)  # transcript fallback: the dedicated logging server
+        self._configs = {}  # guild_id (int) -> config doc
         # Anonymous-relay caches (channel_id <-> reporter user_id) so on_message
         # stays O(1). Kept in sync on create/close; rebuilt in cog_load.
         self._anon_ch2user = {}
         self._anon_user2ch = {}
 
     async def cog_load(self):
-        # Re-register the persistent views so buttons keep working after a restart.
-        self.client.add_view(TicketPanelView(self))
-        self.client.add_view(CloseView(self))
+        self._load_configs()
+        self._register_views()
         # Rebuild the anonymous-relay caches from any still-open anon tickets.
         self._anon_ch2user.clear()
         self._anon_user2ch.clear()
@@ -176,10 +221,43 @@ class TicketSystem(commands.Cog):
             return False
         return True
 
+    # ------------------------- config -------------------------
+
+    def _load_configs(self):
+        self._configs = {}
+        for doc in self.mongo.returnCollectionEntries(database_name=self.db,
+                                                      collection_name=self.config_col):
+            try:
+                self._configs[int(doc["guild_id"])] = doc
+            except (KeyError, TypeError, ValueError):
+                pass
+
+    def _register_views(self):
+        # Re-adding a persistent view with the same custom_ids replaces the old
+        # registration, so this is safe to call again from $ticketreload.
+        for guild_id, conf in self._configs.items():
+            if conf.get("teams"):
+                self.client.add_view(TicketPanelView(self, guild_id, conf["teams"]))
+        self.client.add_view(LegacyPanelView(self))
+        self.client.add_view(CloseView(self))
+
+    def _conf(self, guild_id):
+        return self._configs.get(int(guild_id))
+
+    def _team(self, guild_id, team_key):
+        conf = self._conf(guild_id)
+        if conf is None:
+            return None
+        return next((t for t in conf.get("teams", []) if t.get("key") == team_key), None)
+
     # ------------------------- data helpers -------------------------
 
     def _all_tickets(self):
         return self.mongo.returnCollectionEntries(database_name=self.db, collection_name=self.col)
+
+    def _guild_tickets(self, guild_id):
+        gid = str(guild_id)
+        return [t for t in self._all_tickets() if t.get("guild_id") == gid]
 
     def _open_ticket_for(self, channel_id):
         for t in self._all_tickets():
@@ -187,23 +265,54 @@ class TicketSystem(commands.Cog):
                 return t
         return None
 
+    def _staff_role_names(self, guild_id):
+        conf = self._conf(guild_id)
+        if conf is None:
+            return set()
+        names = {r.lower() for t in conf.get("teams", []) for r in t.get("roles", [])}
+        names |= {r.lower() for r in conf.get("panel_manager_roles", [])}
+        return names
+
     def _is_staff(self, member):
         names = {r.name.lower() for r in member.roles}
-        return bool(names & ALL_STAFF) or member.guild_permissions.administrator
+        return bool(names & self._staff_role_names(member.guild.id)) \
+            or member.guild_permissions.administrator
 
     def _can_manage(self, member, ticket):
         return str(member.id) == ticket["opener_id"] or self._is_staff(member)
 
-    def _ticket_category(self, interaction):
-        """Open tickets in the same category the panel lives in (the tickets
-        category). Fall back to any category whose name contains 'ticket'."""
-        ch = interaction.channel
-        if ch is not None and getattr(ch, "category", None) is not None:
-            return ch.category
-        for cat in interaction.guild.categories:
-            if "ticket" in cat.name.lower():
+    async def _resolve_category(self, guild, team, panel_channel=None):
+        """The team's configured category: by ID first (rename-proof), then by
+        name; if the name is configured but missing it's created once (hidden)
+        and left in place — never picked ad hoc. Teams with no configured
+        category use the panel's own category, else any category whose name
+        contains 'ticket'."""
+        wanted_id = (team or {}).get("category_id")
+        if wanted_id:
+            cat = guild.get_channel(int(wanted_id))
+            if isinstance(cat, discord.CategoryChannel):
                 return cat
-        return None
+        wanted = (team or {}).get("category")
+        if wanted:
+            low = wanted.lower()
+            cat = next((c for c in guild.categories if c.name.lower() == low), None)
+            if cat is not None:
+                return cat
+            try:
+                return await guild.create_category(
+                    name=wanted,
+                    overwrites={
+                        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                        guild.me: discord.PermissionOverwrite(
+                            view_channel=True, send_messages=True, manage_channels=True),
+                    },
+                    reason="Ticket category from Herupa's ticket config",
+                )
+            except discord.Forbidden:
+                return None
+        if panel_channel is not None and getattr(panel_channel, "category", None) is not None:
+            return panel_channel.category
+        return next((c for c in guild.categories if "ticket" in c.name.lower()), None)
 
     # ------------------------- anonymous relay -------------------------
 
@@ -235,19 +344,16 @@ class TicketSystem(commands.Cog):
         except discord.HTTPException:
             return None
 
-    def _guild_category_for_reporter(self, user_id):
-        """Pick a guild the reporter shares with the bot that has a tickets
-        category, preferring one they're actually a member of."""
-        fallback = None
-        for guild in self.client.guilds:
-            category = next((c for c in guild.categories if "ticket" in c.name.lower()), None)
-            if category is None:
+    def _anon_candidate_guilds(self, user_id):
+        """Configured, anon-enabled guilds the reporter is a member of."""
+        out = []
+        for guild_id, conf in self._configs.items():
+            if not conf.get("anon_enabled", True) or not conf.get("teams"):
                 continue
-            if guild.get_member(int(user_id)) is not None:
-                return guild, category
-            if fallback is None:
-                fallback = (guild, category)
-        return fallback if fallback else (None, None)
+            guild = self.client.get_guild(guild_id)
+            if guild is not None and guild.get_member(int(user_id)) is not None:
+                out.append(guild)
+        return out
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -307,7 +413,7 @@ class TicketSystem(commands.Cog):
         except discord.HTTPException:
             pass
 
-    async def create_anon_ticket(self, user, content, category_key):
+    async def create_anon_ticket(self, user, content, guild, team_key):
         # One open anonymous ticket per user (a single shared DM channel).
         existing = self._anon_user2ch.get(user.id)
         if existing:
@@ -317,26 +423,26 @@ class TicketSystem(commands.Cog):
             except discord.HTTPException:
                 pass
             return
-        conf = CATEGORIES.get(category_key)
-        if conf is None:
+        team = self._team(guild.id, team_key)
+        if team is None:
             return
-        guild, category = self._guild_category_for_reporter(user.id)
-        if guild is None or category is None:
+        category = await self._resolve_category(guild, team)
+        if category is None:
             try:
                 await user.send("Sorry, I couldn't find a server to file your report in right now.")
             except discord.HTTPException:
                 pass
             return
 
-        number = len(self._all_tickets()) + 1
+        number = len(self._guild_tickets(guild.id)) + 1
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.me: discord.PermissionOverwrite(
                 view_channel=True, send_messages=True, manage_channels=True, read_message_history=True),
         }
         team_roles = []
-        for rname in conf["roles"]:
-            role = get(guild.roles, name=rname)
+        for rname in team.get("roles", []):
+            role = _find_role(guild, rname)
             if role:
                 overwrites[role] = discord.PermissionOverwrite(
                     view_channel=True, send_messages=True, read_message_history=True)
@@ -347,7 +453,7 @@ class TicketSystem(commands.Cog):
                 name=f"🤫anon-{number:04d}",
                 category=category,
                 overwrites=overwrites,
-                topic=f"Anonymous {conf['label']} report #{number:04d} — messages here relay to the reporter via Herupa DMs.",
+                topic=f"Anonymous {team['label']} report #{number:04d} — messages here relay to the reporter via Herupa DMs.",
             )
         except discord.Forbidden:
             try:
@@ -357,42 +463,50 @@ class TicketSystem(commands.Cog):
             return
 
         self.mongo.addCollectionEntry(database_name=self.db, collection_name=self.col, payload={
-            "number": number, "channel_id": str(channel.id), "opener_id": str(user.id),
-            "category": category_key, "anonymous": True, "claimed_by": None,
-            "opened_at": int(time.time()), "status": "open",
+            "number": number, "guild_id": str(guild.id), "channel_id": str(channel.id),
+            "opener_id": str(user.id), "category": team_key, "anonymous": True,
+            "claimed_by": None, "opened_at": int(time.time()), "status": "open",
         })
         self._anon_link(channel.id, user.id)
 
         ping = " ".join(r.mention for r in team_roles)
         embed = discord.Embed(
-            title=f"🤫 Anonymous {conf['label']} Report #{number:04d}",
+            title=f"🤫 Anonymous {team['label']} Report #{number:04d}",
             description=(f"An anonymous member submitted a report — **their identity is hidden.**\n\n"
                          f">>> {content}\n\n"
                          "Type here to reply — I relay messages to and from the reporter's DMs. "
                          "Start a line with `//` to keep it internal (not sent to them).\n"
                          "*Staff:* `$claim` · `$close [reason]` or the button below."),
-            colour=conf["colour"],
+            colour=team.get("colour", 0x95A5A6),
         )
         await channel.send(content=ping, embed=embed, view=CloseView(self),
                            allowed_mentions=discord.AllowedMentions(roles=True))
         try:
             await user.send(
-                f"✅ Your anonymous **{conf['label']}** report has been sent. "
+                f"✅ Your anonymous **{team['label']}** report has been sent. "
                 "Keep messaging me here and I'll pass it along — your name stays hidden.")
         except discord.HTTPException:
             pass
 
     # ------------------------- create -------------------------
 
-    async def create_ticket(self, interaction, category_key):
-        conf = CATEGORIES[category_key]
+    async def create_ticket(self, interaction, team_key):
         # ACK immediately so we never miss Discord's 3s response window, then work.
         try:
             await interaction.response.defer(ephemeral=True)
         except discord.HTTPException:
             pass
+        # Buttons bypass the command pipeline, so honor $feature toggles here.
+        fm = self.client.get_cog("FeatureManager")
+        if fm is not None and not fm.is_enabled(interaction.guild_id, "tickets"):
+            try:
+                await interaction.followup.send(
+                    "Tickets are turned off in this server right now.", ephemeral=True)
+            except discord.HTTPException:
+                pass
+            return
         try:
-            await self._create_ticket_inner(interaction, category_key, conf)
+            await self._create_ticket_inner(interaction, team_key)
         except Exception as ex:
             import traceback
             traceback.print_exc()
@@ -402,28 +516,33 @@ class TicketSystem(commands.Cog):
             except discord.HTTPException:
                 pass
 
-    async def _create_ticket_inner(self, interaction, category_key, conf):
+    async def _create_ticket_inner(self, interaction, team_key):
         guild = interaction.guild
         opener = interaction.user
+        team = self._team(guild.id, team_key)
+        if team is None:
+            await interaction.followup.send(
+                "Tickets aren't set up for this server yet.", ephemeral=True)
+            return
 
-        # One open ticket per user per category — point them at the existing one.
-        for t in self._all_tickets():
-            if (t.get("opener_id") == str(opener.id) and t.get("category") == category_key
+        # One open ticket per user per team (per server) — point them at the existing one.
+        for t in self._guild_tickets(guild.id):
+            if (t.get("opener_id") == str(opener.id) and t.get("category") == team_key
                     and t.get("status") == "open"):
                 ch = guild.get_channel(int(t["channel_id"]))
                 if ch:
                     await interaction.followup.send(
-                        f"You already have an open {conf['label']} ticket: {ch.mention}", ephemeral=True)
+                        f"You already have an open {team['label']} ticket: {ch.mention}", ephemeral=True)
                     return
 
-        category = self._ticket_category(interaction)
+        category = await self._resolve_category(guild, team, panel_channel=interaction.channel)
         if category is None:
             await interaction.followup.send(
                 "I couldn't find the tickets category. Ask an admin to run the panel "
                 "inside the tickets category.", ephemeral=True)
             return
 
-        number = len(self._all_tickets()) + 1
+        number = len(self._guild_tickets(guild.id)) + 1
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -433,8 +552,8 @@ class TicketSystem(commands.Cog):
                 view_channel=True, send_messages=True, read_message_history=True),
         }
         team_roles = []
-        for rname in conf["roles"]:
-            role = get(guild.roles, name=rname)
+        for rname in team.get("roles", []):
+            role = _find_role(guild, rname)
             if role:
                 overwrites[role] = discord.PermissionOverwrite(
                     view_channel=True, send_messages=True, read_message_history=True)
@@ -442,10 +561,10 @@ class TicketSystem(commands.Cog):
 
         try:
             channel = await guild.create_text_channel(
-                name=f"{conf['emoji']}{opener.display_name}",
+                name=f"{team.get('emoji', '🎫')}{opener.display_name}",
                 category=category,
                 overwrites=overwrites,
-                topic=f"{conf['label']} ticket #{number:04d} opened by {opener} ({opener.id})",
+                topic=f"{team['label']} ticket #{number:04d} opened by {opener} ({opener.id})",
             )
         except discord.Forbidden:
             await interaction.followup.send(
@@ -454,19 +573,19 @@ class TicketSystem(commands.Cog):
             return
 
         self.mongo.addCollectionEntry(database_name=self.db, collection_name=self.col, payload={
-            "number": number, "channel_id": str(channel.id), "opener_id": str(opener.id),
-            "category": category_key, "claimed_by": None, "opened_at": int(time.time()),
-            "status": "open",
+            "number": number, "guild_id": str(guild.id), "channel_id": str(channel.id),
+            "opener_id": str(opener.id), "category": team_key, "claimed_by": None,
+            "opened_at": int(time.time()), "status": "open",
         })
 
         ping = " ".join([opener.mention] + [r.mention for r in team_roles])
         embed = discord.Embed(
-            title=f"{conf['emoji']} {conf['label']} — Ticket #{number:04d}",
-            description=(f"Thanks {opener.mention}, the **{conf['label']}** team has been notified.\n"
+            title=f"{team.get('emoji', '🎫')} {team['label']} — Ticket #{number:04d}",
+            description=(f"Thanks {opener.mention}, the **{team['label']}** team has been notified.\n"
                          "Describe your issue and someone will be with you shortly.\n\n"
                          "*Staff:* `$claim` to take it · `$add @user` to pull someone in · "
                          "`$close [reason]` or the button below to close."),
-            colour=conf["colour"],
+            colour=team.get("colour", 0x5865F2),
         )
         await channel.send(content=ping, embed=embed, view=CloseView(self),
                            allowed_mentions=discord.AllowedMentions(users=True, roles=True))
@@ -492,9 +611,24 @@ class TicketSystem(commands.Cog):
         embed = discord.Embed(title=f"🎫 Ticket #{ticket['number']:04d} closed",
                               description=header, colour=0x888888)
         buf = io.BytesIO(text.encode("utf-8"))
-        # Transcript -> ticket-logs on the dedicated logging server (no-op if unavailable).
-        await self.log.send("ticket", embed=embed,
-                            file=discord.File(buf, filename=f"ticket-{ticket['number']:04d}.txt"))
+        transcript_file = discord.File(buf, filename=f"ticket-{ticket['number']:04d}.txt")
+
+        # Transcript -> the team's archive channel in this guild if configured,
+        # else ticket-logs on the dedicated logging server (no-op if unavailable).
+        team = self._team(channel.guild.id, ticket.get("category"))
+        archive_name = (team or {}).get("archive_channel")
+        archive = None
+        if archive_name:
+            low = archive_name.lower()
+            archive = next((c for c in channel.guild.text_channels if c.name.lower() == low), None)
+        if archive is not None:
+            try:
+                await archive.send(embed=embed, file=transcript_file,
+                                   allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException:
+                pass
+        else:
+            await self.log.send("ticket", embed=embed, file=transcript_file)
         return text
 
     # A transcript this size or smaller fits comfortably in one embed
@@ -567,26 +701,37 @@ class TicketSystem(commands.Cog):
 
     # ------------------------- commands -------------------------
 
+    def _may_post_panel(self, member):
+        if member.guild_permissions.administrator:
+            return True
+        conf = self._conf(member.guild.id)
+        if conf is None:
+            return False
+        allowed = {r.lower() for r in conf.get("panel_manager_roles", [])}
+        return any(r.name.lower() in allowed for r in member.roles)
+
     @commands.command(name="ticketpanel", aliases=["tpanel"])
+    @commands.guild_only()
     async def ticketpanel(self, ctx):
-        """Post the ticket panel in this channel (admin / head chill only)."""
-        if not (ctx.author.guild_permissions.administrator
-                or any(r.name.lower() == "head chill" for r in ctx.author.roles)):
+        """Post the ticket panel in this channel (admin / panel managers only)."""
+        conf = self._conf(ctx.guild.id)
+        if conf is None or not conf.get("teams"):
+            await ctx.send("Tickets aren't set up for this server yet.")
+            return
+        if not self._may_post_panel(ctx.author):
             await ctx.send("Only an admin can post the ticket panel.")
             return
-        embed = discord.Embed(
-            title="🎫 Open a Ticket",
-            description=("Need a hand? Pick the team that fits and we'll open a private channel just for you.\n\n"
-                         "🤖 **Tech Support** — bots, integrations, game servers\n"
-                         "👀 **Moderation** — reports, rule issues, appeals\n"
-                         "📸 **Media** — content, streams, media requests\n\n"
-                         "Your ticket will be visible only to you and the team you choose.\n\n"
-                         "🤫 **Want to stay anonymous?** Instead of opening a ticket, **DM me** "
-                         "`$whisper <your message>`. I'll ask which team it should go to and open an "
-                         "anonymous ticket — your name stays hidden and you chat with the team right here in DMs."),
-            colour=0x5865F2,
-        )
-        panel = await ctx.send(embed=embed, view=TicketPanelView(self))
+        lines = ["Need a hand? Pick the team that fits and we'll open a private channel just for you.\n"]
+        for team in conf["teams"]:
+            lines.append(f"{team.get('emoji', '🎫')} **{team['label']}** — {team.get('blurb', '')}")
+        lines.append("\nYour ticket will be visible only to you and the team you choose.")
+        if conf.get("anon_enabled", True):
+            lines.append(
+                "\n🤫 **Want to stay anonymous?** Instead of opening a ticket, **DM me** "
+                "`$whisper <your message>`. I'll ask which team it should go to and open an "
+                "anonymous ticket — your name stays hidden and you chat with the team right here in DMs.")
+        embed = discord.Embed(title="🎫 Open a Ticket", description="\n".join(lines), colour=0x5865F2)
+        panel = await ctx.send(embed=embed, view=TicketPanelView(self, ctx.guild.id, conf["teams"]))
         try:
             await panel.pin()
         except discord.HTTPException:
@@ -595,6 +740,14 @@ class TicketSystem(commands.Cog):
             await ctx.message.delete()
         except discord.HTTPException:
             pass
+
+    @commands.command(name="ticketreload")
+    @commands.has_guild_permissions(administrator=True)
+    async def ticketreload(self, ctx):
+        """Re-read the ticket configs from Mongo and re-register the panel views."""
+        self._load_configs()
+        self._register_views()
+        await ctx.send(f"🎫 Reloaded ticket config for {len(self._configs)} server(s).")
 
     @commands.command(name="whisper")
     async def whisper(self, ctx, *, message: str = None):
@@ -615,8 +768,35 @@ class TicketSystem(commands.Cog):
             return
         # (If they already have an open report, the global DM lock blocks this and
         #  the message is relayed instead — see _dm_locked_by_anon / _handle_reporter_dm.)
-        view = AnonTeamView(self, ctx.author, message.strip())
-        view.message = await ctx.send("🤫 Which team should receive your anonymous report?", view=view)
+        guilds = self._anon_candidate_guilds(ctx.author.id)
+        if not guilds:
+            await ctx.send("Sorry, I couldn't find a server to file your report in right now.")
+            return
+        content = message.strip()
+        if len(guilds) == 1:
+            await self._ask_anon_team(ctx, guilds[0], content)
+        else:
+            # The reporter is in more than one configured server — ask which one first.
+            async def chose_guild(guild_id):
+                guild = self.client.get_guild(int(guild_id))
+                if guild is not None:
+                    await self._ask_anon_team(ctx, guild, content)
+            view = AnonChoiceView(
+                [(str(g.id), g.name, None, "secondary") for g in guilds], chose_guild)
+            view.message = await ctx.send(
+                "🤫 Which server is your anonymous report about?", view=view)
+
+    async def _ask_anon_team(self, ctx, guild, content):
+        conf = self._conf(guild.id)
+
+        async def chose_team(team_key):
+            await self.create_anon_ticket(ctx.author, content, guild, team_key)
+
+        view = AnonChoiceView(
+            [(t["key"], t["label"], t.get("emoji"), t.get("style")) for t in conf.get("teams", [])],
+            chose_team)
+        view.message = await ctx.send(
+            "🤫 Which team should receive your anonymous report?", view=view)
 
     @commands.command(name="close")
     async def close(self, ctx, *, reason: str = None):

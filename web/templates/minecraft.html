@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Minecraft{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1>Minecraft</h1>
+  <p class="page-sub">The linked Minecraft server: who's on, who's whitelisted, and which Discord roles sync to in-game ranks.</p>
+</header>
+
+{% if feature_off %}
+<section class="card">
+  <h2>⛔ Minecraft is turned off in this server</h2>
+  <p class="hint">An admin can turn it on in Discord with <span class="mono">$feature on minecraft</span> (needs <span class="mono">accounts</span> on too), or on the Features page.</p>
+</section>
+{% elif not configured %}
+<section class="card">
+  <h2>No Minecraft server configured</h2>
+  <p class="hint">This server's accounts config has no <span class="mono">minecraft</span> block yet (RCON host, port, and password). Set one up in Mongo and this page comes alive.</p>
+</section>
+{% else %}
+
+<section class="card">
+  <h2>{% if online %}🟢 Server online{% else %}🔴 Server unreachable{% endif %}</h2>
+  {% if online %}
+  <p class="hint">{{ address }} · {{ players|length }} playing{% if players %}: {{ players|join(', ') }}{% endif %}</p>
+  {% else %}
+  <p class="hint">Couldn't reach {{ address }} over RCON. Status, whitelist, and saves that touch the server will fail until it's back.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Role sync</h2>
+  <p class="hint">Members with a linked Minecraft account get the LuckPerms group of each Discord role they hold. Clear a row's group (or set its role to none) to drop the mapping. What a group can <em>do</em> in game is configured in LuckPerms itself.</p>
+  <form method="post" action="/minecraft/roles">
+    <table class="mc-map">
+      <thead><tr><th>Discord role</th><th>LuckPerms group</th></tr></thead>
+      <tbody>
+        {% for m in mappings %}
+        <tr>
+          <td>
+            <select name="role_id">
+              <option value="none">(none — remove)</option>
+              {% for r in roles %}
+              <option value="{{ r.id }}" {{ 'selected' if r.id == m.role_id }}>@{{ r.name }}</option>
+              {% endfor %}
+              {% if m.missing %}<option value="{{ m.role_id }}" selected>(deleted role)</option>{% endif %}
+            </select>
+          </td>
+          <td><input name="group" value="{{ m.group }}" maxlength="36" placeholder="group name"></td>
+        </tr>
+        {% endfor %}
+        {% for _ in range(2) %}
+        <tr>
+          <td>
+            <select name="role_id">
+              <option value="none" selected>(add a mapping…)</option>
+              {% for r in roles %}
+              <option value="{{ r.id }}">@{{ r.name }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td><input name="group" value="" maxlength="36" placeholder="group name"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button class="btn btn-primary btn-small" type="submit">Save mappings</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Whitelist ({{ wl_rows|length }})</h2>
+  {% if wl_rows %}
+  <table>
+    <thead><tr><th>Player</th><th>Discord</th></tr></thead>
+    <tbody>
+      {% for w in wl_rows %}
+      <tr>
+        <td class="mono">{{ w.name }}</td>
+        <td>
+          {% if w.member %}
+          {% if w.member.avatar %}<img src="{{ w.member.avatar }}" alt="" class="kanban-avatar"> {% endif %}{{ w.member.name }}
+          {% else %}<span class="chip chip-off">no link</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint">Entries without a link were added by hand; they turn into linked entries when that player runs <span class="mono">$link</span> in Discord.</p>
+  {% else %}
+  <p class="empty">{% if online %}The whitelist is empty.{% else %}Unavailable while the server is unreachable.{% endif %}</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

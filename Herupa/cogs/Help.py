@@ -3,12 +3,41 @@ import discord
 from discord.ext import commands
 
 import asyncio
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+from tools.HerupaMongo import HerupaMongo
 
 
 class Help(commands.Cog):
+    '''$help menu. Per-guild visibility comes from Mongo (db "help",
+    collection "config", one doc per guild_id):
+
+        {"guild_id": "...",
+         "sections": ["fun", "voice", "utility", "tickets"],  # member pages to show
+         "hide_commands": ["$mock", "$daily"],   # entries to drop from any page
+         "background": ["Invite Tracking"]}      # background-task names to show
+
+    No doc (or missing key) means show everything, so Chill Club needs no
+    config. Staff pages always show to staff, minus hide_commands.'''
 
     def __init__(self, client):
         self.client = client
+        self.mongo = HerupaMongo()
+
+    def _help_conf(self, guild_id):
+        if guild_id is None:
+            return {}
+        gid = str(guild_id)
+        for doc in self.mongo.returnCollectionEntries(database_name="help",
+                                                      collection_name="config"):
+            if doc.get("guild_id") == gid:
+                return doc
+        return {}
 
     @commands.command(name="help", aliases=["h"])
     async def help(self, ctx):
@@ -43,16 +72,23 @@ class Help(commands.Cog):
         # Deputies don't have native Discord mod perms (moderation runs through
         # Herupa), so staff is detected by role, not by permission.
         author_roles = {r.name.lower() for r in getattr(ctx.author, "roles", [])}
-        is_mod = bool(author_roles & {"head chill", "sheriff", "deputy"})
-        is_ticket_staff = bool(author_roles & {
-            "head chill", "sheriff", "deputy",
-            "techie manager", "techie", "media manager", "media"})
+        # Mod status comes from the per-server moderation config, so ask the cog.
+        mod_cog = ctx.bot.get_cog("DeputyModeration")
+        if mod_cog is not None and ctx.guild is not None:
+            is_mod = mod_cog.is_mod(ctx.author)
+        else:
+            is_mod = bool(author_roles & {"head chill", "sheriff", "deputy"})
+        # Ticket staff is defined by the per-server ticket config, so ask the cog.
+        ticket_cog = ctx.bot.get_cog("TicketSystem")
+        if ticket_cog is not None and ctx.guild is not None:
+            is_ticket_staff = ticket_cog._is_staff(ctx.author)
+        else:
+            is_ticket_staff = is_mod
 
         categories = [
-            ("🎉 Fun & Novelty", {
+            ("fun", "🎉 Fun & Novelty", {
                 "$lenny · $l": "Herupa responds with ( ͡° ͜ʖ ͡°)",
                 "$uwu · $u": "Herupa joins your voice channel and gets uwu.",
-                "$kanye · $k": "Get a random Kanye West quote.",
                 "$chucknorris {category} · $cn": "Get a random Chuck Norris joke.",
                 "$pokemon {name} · $pk": "Look up info on a Pokémon.",
                 "$poll · $pl": "Create a poll people can vote on.",
@@ -62,14 +98,14 @@ class Help(commands.Cog):
                 "$birthdays · $bdays": "See upcoming birthdays.",
                 "$avatarpic {@member} · $ap": "Show a member's avatar.",
             }),
-            ("🔊 Voice & Rooms", {
+            ("voice", "🔊 Voice & Rooms", {
                 "$crpm": "Toggle privacy mode for your auto-created voice room.",
                 "$migrate {channel id} · $m": "Move everyone in your voice channel to another one.",
                 "$addfavorite {@member} · $af": "Favorite a member and get pinged when they join a VC (must be mutual).",
                 "$removefavorite {name/ID/number} · $rf": "Remove a favorite by name, user ID, or their number in $displayfavorites, so you never have to ping them.",
                 "$displayfavorites · $df": "See your list of favorites.",
             }),
-            ("🎶 Music", {
+            ("music", "🎶 Music", {
                 "$music {song or link} · $play": "Summon a free Hibiki DJ to your voice channel and play a song (searches YouTube).",
                 "$skip": "Skip the current song.",
                 "$pause / $resume": "Pause or resume playback.",
@@ -77,7 +113,7 @@ class Help(commands.Cog):
                 "$np": "Show the current song.",
                 "$stop": "Clear the queue and send the DJ home.",
             }),
-            ("🛠️ Utility", {
+            ("utility", "🛠️ Utility", {
                 "$membercount · $mc": "Show the server's member and bot counts.",
                 "$qrcode {data} · $qr": "Generate a QR code.",
                 "$whoisinspace · $wiis": "See who's currently in space.",
@@ -87,10 +123,13 @@ class Help(commands.Cog):
                 "$leaderboard {stat} · $lb": "Top members by voice time, invites, AFK time, or messages (monthly and all-time).",
                 "$rank {@member} · $level": "See your level, XP, and progress to the next level (defaults to you).",
                 "$daily": "Claim 100 XP once a day. Streaks boost it: 2x at 3 days, 3x at 5, 5x at 10.",
+                "$link": "Link a game account to your Discord. Bare $link walks you through it ($link roblox builderman also works).",
+                "$verify": "Finish a pending link by completing its proof step (Roblox: the code in your profile's About section).",
+                "$unlink": "Remove a linked game account. Bare $unlink lets you pick from a list.",
                 "$ping · $p": "Check that Herupa is alive (pong!).",
                 "$help · $h": "Show this help menu.",
             }),
-            ("🛒 Level Shop", {
+            ("shop", "🛒 Level Shop", {
                 "$shop": "Browse rewards you can buy by spending your levels.",
                 "$buy color {name}": "Equip a name color (2 levels). Colors: Pink, Red, Orange, Gold, Green, Teal, Blue, Purple.",
                 "$removecolor · $uncolor": "Take off your name color for free.",
@@ -99,20 +138,32 @@ class Help(commands.Cog):
                 "$buy nickname {@member} {name}": "Change someone's nickname as a prank (3 levels). Not staff or bots.",
                 "$buy mock {@member}": "Herupa repeats everything they say in your voice channel for a minute (5 levels). Running away only delays it.",
             }),
-            ("🎫 Tickets & Reports", {
-                "🎫 Open a ticket": "Click a button in the create-a-ticket channel to open a private ticket with staff (support, moderation, or media).",
+            ("projects", "🗂️ Projects", {
+                "🗂️ New task": "Make a post in a project forum and I'll track it as a task.",
+                "$task {title}": "Create a task from anywhere (use $task {project} | {title} if there are several projects).",
+                "$assign {@member}": "In a task's thread: route the task (bare $assign takes it yourself).",
+                "$due {when}": "Set the due date: friday, tomorrow, 8/15, in 3 days, or none to clear.",
+                "$priority {level}": "low, normal, high, or urgent (urgent gets a 🔥 tag).",
+                "$status {stage}": "todo, doing, review, or done.",
+                "$done": "Finish the task: tags it ✅ and archives the thread.",
+                "$mytasks": "Your open tasks, soonest due first.",
+                "$board": "Every project's task counts at a glance.",
+            }),
+            ("tickets", "🎫 Tickets & Reports", {
+                "🎫 Open a ticket": "Click a button on the ticket panel to open a private ticket with the right team.",
                 "$whisper {message}": "DM me this to send an anonymous report to staff. Your identity stays hidden, and you chat with the team through my DMs.",
             }),
         ]
 
         if is_mod:
-            categories.append(("🔨 Moderation  (staff)", {
+            categories.append(("modstaff", "🔨 Moderation  (staff)", {
                 "$timeout {@member} {minutes} {reason} · $to":
-                    "Mute a member.  **Deputy:** ≤ 60 min  •  **Sheriff+:** any duration.",
+                    "Mute a member.  **Junior mods:** ≤ 60 min  •  **Senior staff:** any duration.",
                 "$kick {@member} {reason}":
-                    "Kick a member.  **Deputy:** max 3 kicks+bans per hour, can't target staff  •  **Sheriff+:** unlimited.",
+                    "Kick a member.  **Junior mods:** max 3 kicks+bans per hour, can't target staff  •  **Senior staff:** unlimited.",
                 "$ban {@member} {reason}":
-                    "Ban a member.  **Deputy:** shares the same 3-per-hour pool  •  **Sheriff+:** unlimited.",
+                    "Ban a member.  **Junior mods:** shares the same 3-per-hour pool  •  **Senior staff:** unlimited.",
+                "$lookup {@member}": "See the game accounts a member has linked.",
                 "$clear {number} · $c": "Bulk-delete messages (default 5).",
                 "$purgatory {@member} · $purg": "Send a member to purgatory.",
                 "$rolepanel [single] {title} {@role...} · $rp":
@@ -120,12 +171,72 @@ class Help(commands.Cog):
             }))
 
         if is_ticket_staff:
-            categories.append(("🎫 Ticket Staff", {
+            categories.append(("ticketstaff", "🎫 Ticket Staff", {
                 "$ticketpanel · $tpanel": "Post the ticket panel in the current channel.",
                 "$claim": "Claim the current ticket so members know who is handling it.",
                 "$ticketadd {@member} · $add": "Add a member to the current ticket.",
                 "$close": "Close the current ticket and save a transcript.",
             }))
+
+        # Admin page: feature toggles + config reloads, for owner/admin/bot managers.
+        fm = ctx.bot.get_cog("FeatureManager")
+        if fm is not None and ctx.guild is not None and fm.is_manager(ctx.author):
+            categories.append(("admin", "⚙️ Server Admin  (staff)", {
+                "$feature": "See Herupa's features and whether they're on in this server.",
+                "$feature off {name} / on {name}": "Turn one of Herupa's features off or on here.",
+                "$project create": "Create a project forum whose posts I track as tasks (opens a form; a name after 'create' skips it).",
+                "$project delete": "Pick a project from a list and delete it, forum and task records included (asks for confirmation).",
+                "$project digest": "Send the morning project digest to the current channel ($project digest off stops it).",
+                "$mcroles": "Map Discord roles to Minecraft (LuckPerms) groups for linked members ($mcroles set/remove works inline).",
+                "$ticketreload": "Re-read the ticket config after editing it in Mongo.",
+                "$roomreload": "Re-read the rooms config after editing it in Mongo.",
+            }))
+
+        # Per-guild visibility, two layers:
+        #   1. $feature toggles hide anything belonging to a disabled feature.
+        #   2. The help config filters member pages / commands / background rows.
+        # Staff pages always show to staff; pages that end up empty are dropped.
+        SECTION_FEATURE = {"music": "music", "shop": "leveling",
+                           "tickets": "tickets", "ticketstaff": "tickets",
+                           "modstaff": "moderation", "projects": "projects"}
+        COMMAND_FEATURE = {
+            "$crpm": "rooms",
+            "$rank {@member} · $level": "leveling", "$daily": "leveling",
+            "$leaderboard {stat} · $lb": "leveling", "$mock": "leveling",
+            "$birthday {date} · $bday": "birthdays", "$birthdays · $bdays": "birthdays",
+            "$link": "accounts", "$verify": "accounts",
+            "$unlink": "accounts", "$lookup {@member}": "accounts",
+            "$addfavorite {@member} · $af": "favorites",
+            "$removefavorite {name/ID/number} · $rf": "favorites",
+            "$displayfavorites · $df": "favorites",
+        }
+
+        def feature_on(name):
+            return (name is None or fm is None or ctx.guild is None
+                    or fm.is_enabled(ctx.guild.id, name))
+
+        help_conf = self._help_conf(ctx.guild.id if ctx.guild else None)
+        sections = help_conf.get("sections")
+        hidden = set(help_conf.get("hide_commands", []))
+        # Sections a guild reserves for staff eyes (config "staff_sections").
+        staff_only = set(help_conf.get("staff_sections", []))
+        is_staff_viewer = (is_mod or is_ticket_staff
+                           or (fm is not None and ctx.guild is not None
+                               and fm.is_manager(ctx.author)))
+        STAFF_KEYS = {"modstaff", "ticketstaff", "admin"}
+        filtered = []
+        for key, title, cmds in categories:
+            if not feature_on(SECTION_FEATURE.get(key)):
+                continue
+            if key in staff_only and not is_staff_viewer:
+                continue
+            if sections is not None and key not in STAFF_KEYS and key not in sections:
+                continue
+            cmds = {k: v for k, v in cmds.items()
+                    if k not in hidden and feature_on(COMMAND_FEATURE.get(k))}
+            if cmds:
+                filtered.append((title, cmds))
+        categories = filtered
 
         backgroundTasks = {
             "Activity Stats": "Tracks voice time, AFK time, and messages sent for the leaderboards (see $lb).",
@@ -141,6 +252,14 @@ class Help(commands.Cog):
             "Favorites": "Notifies your mutual favorites when you connect to a voice channel.",
             "Destroy Room": "Deletes an auto-created room when the last person leaves (backup sweep at 6:30am EST).",
         }
+        TASK_FEATURE = {"Activity Stats": "leveling", "Welcome Rewards": "leveling",
+                        "Hibiki DJ Crew": "music", "Favorites": "favorites",
+                        "Destroy Room": "rooms", "Counting": "counting"}
+        backgroundTasks = {k: v for k, v in backgroundTasks.items()
+                           if feature_on(TASK_FEATURE.get(k))}
+        shown_tasks = help_conf.get("background")
+        if shown_tasks is not None:
+            backgroundTasks = {k: v for k, v in backgroundTasks.items() if k in shown_tasks}
 
         # Page 0 is the landing page; pages 1..N are the categories (staff pages
         # only present for staff).

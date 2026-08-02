@@ -44,6 +44,9 @@ class WelcomeReward(commands.Cog):
     async def on_message(self, message):
         if message.guild is None or message.author.bot:
             return
+        fm = self.client.get_cog("FeatureManager")
+        if fm is not None and not fm.is_enabled(message.guild.id, "leveling"):
+            return
         ref = message.reference
         if ref is None or ref.message_id is None:
             return

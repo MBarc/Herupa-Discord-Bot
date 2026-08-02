@@ -2,6 +2,12 @@
 # birthday in general chat each morning, and they show up on the web control
 # room's schedule calendar. Only month/day is used for the celebration; a year,
 # if given, is optional and just lets Herupa mention an age.
+#
+# PER SERVER: saving your birthday registers it in THAT server only (Mongo
+# "birthdays"/"dates": guild_id/user_id/month/day/year/name). Each server's
+# announcement channel comes from "birthdays"/"config" ({guild_id, channel:
+# "<channel name>"}); guilds without a config doc get no announcements, and
+# the $feature "birthdays" toggle silences a server entirely.
 
 import calendar as _cal
 import re
@@ -14,7 +20,6 @@ from discord.ext import commands, tasks
 from tools.HerupaMongo import HerupaMongo
 
 EASTERN = ZoneInfo("America/New_York")
-GENERAL_CHANNEL = "🤠general-chat🤠"
 PINK = discord.Colour.from_rgb(255, 183, 197)
 MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
@@ -75,6 +80,12 @@ class Birthday(commands.Cog):
     def _meta(self):
         return self.mongo.client["birthdays"]["meta"]
 
+    def _config(self):
+        return self.mongo.client["birthdays"]["config"]
+
+    def _doc(self, guild_id, user_id):
+        return self._col().find_one({"guild_id": str(guild_id), "user_id": str(user_id)})
+
     async def cog_load(self):
         self.announce.start()
 
@@ -89,7 +100,7 @@ class Birthday(commands.Cog):
         # $birthday @someone -> show theirs
         if ctx.message.mentions:
             target = ctx.message.mentions[0]
-            doc = self._col().find_one({"_id": str(target.id)})
+            doc = self._doc(ctx.guild.id, target.id)
             if not doc:
                 await ctx.send(f"{target.display_name} hasn't saved a birthday yet.")
             else:
@@ -99,7 +110,7 @@ class Birthday(commands.Cog):
 
         # $birthday -> show your own or prompt
         if not arg:
-            doc = self._col().find_one({"_id": str(ctx.author.id)})
+            doc = self._doc(ctx.guild.id, ctx.author.id)
             if doc:
                 await ctx.send(f"🎂 Your birthday is saved as "
                                f"**{pretty(doc['month'], doc['day'], doc.get('year'))}**. "
@@ -115,7 +126,7 @@ class Birthday(commands.Cog):
             return
         month, day, year = parsed
         self._col().update_one(
-            {"_id": str(ctx.author.id)},
+            {"guild_id": str(ctx.guild.id), "user_id": str(ctx.author.id)},
             {"$set": {"month": month, "day": day, "year": year,
                       "name": ctx.author.display_name}},
             upsert=True)
@@ -125,7 +136,8 @@ class Birthday(commands.Cog):
     @commands.guild_only()
     @commands.command(name="forgetbirthday")
     async def forgetbirthday(self, ctx):
-        res = self._col().delete_one({"_id": str(ctx.author.id)})
+        res = self._col().delete_one({"guild_id": str(ctx.guild.id),
+                                      "user_id": str(ctx.author.id)})
         if res.deleted_count:
             await ctx.send("Done, I've forgotten your birthday.")
         else:
@@ -136,8 +148,8 @@ class Birthday(commands.Cog):
     async def birthdays(self, ctx):
         today = datetime.now(EASTERN)
         rows = []
-        for doc in self._col().find():
-            member = ctx.guild.get_member(int(doc["_id"]))
+        for doc in self._col().find({"guild_id": str(ctx.guild.id)}):
+            member = ctx.guild.get_member(int(doc["user_id"]))
             if member is None:
                 continue
             # days until the next occurrence
@@ -168,29 +180,38 @@ class Birthday(commands.Cog):
     async def announce(self):
         now = datetime.now(EASTERN)
         today = now.date().isoformat()
-        state = self._meta().find_one({"_id": "state"}) or {}
-        if state.get("last") == today:
-            return
-        channel = discord.utils.get(self.client.get_all_channels(), name=GENERAL_CHANNEL)
-        if channel is None:
-            return
-        celebrants = []
-        for doc in self._col().find({"month": now.month, "day": now.day}):
-            member = channel.guild.get_member(int(doc["_id"]))
-            if member is not None:
-                celebrants.append(member)
-        if celebrants:
-            mentions = ", ".join(m.mention for m in celebrants)
-            plural = "birthdays" if len(celebrants) > 1 else "birthday"
-            embed = discord.Embed(
-                colour=PINK,
-                description=f"🎂🎉 Happy {plural}, {mentions}! Hope your day is amazing 💖")
-            try:
-                await channel.send(content=mentions, embed=embed,
-                                   allowed_mentions=discord.AllowedMentions(users=True))
-            except discord.HTTPException:
-                pass
-        self._meta().update_one({"_id": "state"}, {"$set": {"last": today}}, upsert=True)
+        fm = self.client.get_cog("FeatureManager")
+        for conf in self._config().find():
+            gid = conf.get("guild_id")
+            guild = self.client.get_guild(int(gid)) if gid else None
+            if guild is None:
+                continue
+            if fm is not None and not fm.is_enabled(guild.id, "birthdays"):
+                continue
+            state_id = f"state:{gid}"
+            state = self._meta().find_one({"_id": state_id}) or {}
+            if state.get("last") == today:
+                continue
+            channel = discord.utils.get(guild.text_channels, name=conf.get("channel", ""))
+            if channel is None:
+                continue
+            celebrants = []
+            for doc in self._col().find({"guild_id": gid, "month": now.month, "day": now.day}):
+                member = guild.get_member(int(doc["user_id"]))
+                if member is not None:
+                    celebrants.append(member)
+            if celebrants:
+                mentions = ", ".join(m.mention for m in celebrants)
+                plural = "birthdays" if len(celebrants) > 1 else "birthday"
+                embed = discord.Embed(
+                    colour=PINK,
+                    description=f"🎂🎉 Happy {plural}, {mentions}! Hope your day is amazing 💖")
+                try:
+                    await channel.send(content=mentions, embed=embed,
+                                       allowed_mentions=discord.AllowedMentions(users=True))
+                except discord.HTTPException:
+                    continue
+            self._meta().update_one({"_id": state_id}, {"$set": {"last": today}}, upsert=True)
 
     @announce.before_loop
     async def _before(self):

@@ -6,6 +6,13 @@
   <p class="page-sub">Look up any member's XP, level, and daily streak. Adjustments land instantly.</p>
 </header>
 
+{% if feature_off %}
+<section class="card">
+  <h2>⛔ Leveling is turned off in this server</h2>
+  <p class="hint">Members here don't earn XP and the leveling commands are disabled.
+  An admin can turn it back on in Discord with <span class="mono">$feature on leveling</span>.</p>
+</section>
+{% else %}
 <section class="card">
   <form method="get" action="/levels" class="search-row">
     <label class="sr-only" for="lv-q">Search members</label>
@@ -79,4 +86,5 @@
   <p class="empty">No leveling data yet.</p>
   {% endif %}
 </section>
+{% endif %}
 {% endblock %}

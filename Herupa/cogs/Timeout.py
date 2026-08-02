@@ -1,36 +1,68 @@
 from discord.ext import commands
-from discord.utils import get
 import discord
 from datetime import timedelta
 
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+from tools.HerupaMongo import HerupaMongo
+
+
 class Timeout(commands.Cog):
+    '''$timeout, driven by the same per-guild config as DeputyModeration
+    (Mongo db "moderation", collection "config"): restricted_roles may use it
+    but are capped at timeout_cap_minutes; unrestricted_roles (and native
+    admins) have no cap. Actions log to the guild's log_channel.'''
 
     def __init__(self, client):
         self.client = client
-        # NOTE: the role is "deputy" (singular). The old "deputies" value meant
-        # deputies could never actually use this command.
-        self.allowed_roles = ["deputy", "sheriff", "head chill"]
-        self.unrestricted_roles = ["sheriff", "head chill"]   # no duration cap
-        self.deputy_timeout_cap_minutes = 60
-        self.log_channel_name = "👮law-chat👮"
+        self.dbName = "moderation"
+        self.config_collection = "config"
+        self.mongo_instance = HerupaMongo()
+
+    def _conf(self, guild_id):
+        gid = str(guild_id)
+        for doc in self.mongo_instance.returnCollectionEntries(
+                database_name=self.dbName, collection_name=self.config_collection):
+            if doc.get("guild_id") == gid:
+                return doc
+        return None
+
+    def _has_role(self, member, names):
+        low = {n.lower() for n in names}
+        return any(role.name.lower() in low for role in member.roles)
 
     @commands.command(name="timeout", aliases=["to"])
+    @commands.guild_only()
     async def timeout(self, ctx, member: discord.Member, duration: int, *, reason: str):
         """
         Timeout a member for a specified duration with a reason.
         """
+        conf = self._conf(ctx.guild.id)
+        if conf is None:
+            await ctx.send("Moderation commands aren't set up for this server yet.")
+            return
 
-        # Check if the author has one of the allowed roles
-        if not any(role.name.lower() in self.allowed_roles for role in ctx.author.roles):
+        is_unrestricted = self._has_role(member=ctx.author, names=conf.get("unrestricted_roles", [])) \
+            or ctx.author.guild_permissions.administrator
+        is_restricted = self._has_role(member=ctx.author, names=conf.get("restricted_roles", []))
+
+        # Check if the author is on the mod ladder at all
+        if not (is_unrestricted or is_restricted):
             await ctx.send("You do not have the required role to use this command.")
             return
 
-        # Deputies are capped; sheriff / head chill are not.
-        is_unrestricted = any(role.name.lower() in self.unrestricted_roles for role in ctx.author.roles)
-        if not is_unrestricted and duration > self.deputy_timeout_cap_minutes:
+        # Restricted mods are capped; unrestricted roles are not.
+        cap = conf.get("timeout_cap_minutes", 60)
+        escalation = conf.get("escalation_name", "a senior moderator")
+        if not is_unrestricted and duration > cap:
             await ctx.send(
-                f"Deputies can time a member out for at most {self.deputy_timeout_cap_minutes} "
-                "minutes. A Sheriff must apply a longer timeout."
+                f"You can time a member out for at most {cap} minutes. "
+                f"{escalation[0].upper()}{escalation[1:]} must apply a longer timeout."
             )
             return
 
@@ -50,7 +82,9 @@ class Timeout(commands.Cog):
             await ctx.send(f"{member} has been timed out for {duration} minutes. Reason: {reason}", delete_after=10)
 
             # Log the timeout action
-            log_channel = get(ctx.guild.text_channels, name=self.log_channel_name)
+            name = (conf.get("log_channel") or "").lower()
+            log_channel = next(
+                (c for c in ctx.guild.text_channels if c.name.lower() == name), None)
             if log_channel:
                 await log_channel.send(f"{member} was timed out by {ctx.author} for {duration} minutes. Reason: {reason}")
         except discord.Forbidden:
@@ -64,6 +98,7 @@ class Timeout(commands.Cog):
             await ctx.send("Usage: $timeout <member> <duration (in minutes)> <reason>")
         elif isinstance(error, commands.BadArgument):
             await ctx.send("Invalid argument type.")
+
 
 async def setup(client):
     await client.add_cog(Timeout(client))

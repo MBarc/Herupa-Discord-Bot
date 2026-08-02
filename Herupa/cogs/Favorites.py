@@ -1,5 +1,10 @@
 '''
 Purpose: This file contains the commands a user can use to manage their favorites.
+
+Favorites are PER SERVER: your list in one server is independent of your list
+in another (db "favorites", collection "favorites", one doc per
+guild_id/owner_id/fav_id). Join notifications and CreateRoom's private-room
+access both read the guild-scoped list.
 '''
 from discord.ext import commands
 import discord
@@ -31,18 +36,18 @@ class Favorites(commands.Cog):
         self.notify_cooldown_seconds = 300  # 5 minutes
         self._last_notified = {}  # joiner_id -> unix timestamp of last DM sent
 
+    def _col(self):
+        return self.mongo_instance.client[self.dbName]["favorites"]
+
     @commands.command(name="addFavorite",
                       description="Adds a favorite member from the author's favorites list",
                       brief="Adds a favorite.",
                       aliases=["af"])
+    @commands.guild_only()
     async def addfavorite(self, ctx):
 
         # Getting the author
         authorID = str(ctx.author.id)
-
-        # If the author doesn't have a collection, create it
-        if not self.mongo_instance.doesCollectionExist(database_name=self.dbName, collection_name=authorID):
-            self.mongo_instance.createCollection(database_name=self.dbName, collection_name=authorID)
 
         # If there isn't any or too many mentions
         if len(ctx.message.mentions) != 1:
@@ -56,18 +61,20 @@ class Favorites(commands.Cog):
             await ctx.channel.send("You can't favorite yourself!")
             return
 
-        # Adding the member as a favorite for the author
-        self.mongo_instance.addCollectionEntry(database_name=self.dbName, collection_name=authorID, payload={"id": mention})
+        # Adding the member as a favorite for the author (in this server only).
+        key = {"guild_id": str(ctx.guild.id), "owner_id": authorID, "fav_id": mention}
+        self._col().update_one(key, {"$set": key}, upsert=True)
 
         # Sending feedback to the user
         await ctx.channel.send(f"You have successfully added {ctx.message.mentions[0].name} as a favorite!")
 
-    async def _favorite_users(self, authorID):
-        """Ordered (user_id, user_or_None) pairs for authorID's favorites, in
-        the same order displayfavorites lists them (so list numbers line up)."""
+    async def _favorite_users(self, guild_id, authorID):
+        """Ordered (user_id, user_or_None) pairs for authorID's favorites in
+        this guild, in the same order displayfavorites lists them (so list
+        numbers line up)."""
         pairs = []
-        for document in self.mongo_instance.returnCollectionEntries(database_name=self.dbName, collection_name=authorID):
-            uid = str(document["id"])
+        for document in self._col().find({"guild_id": str(guild_id), "owner_id": str(authorID)}):
+            uid = str(document["fav_id"])
             user = self.client.get_user(int(uid))
             if user is None:
                 try:
@@ -125,16 +132,13 @@ class Favorites(commands.Cog):
                       description="Removes a favorite by name, user ID, or list number (no @-ping needed; a mention still works too)",
                       brief="Removes a favorite.",
                       aliases=["rf"])
+    @commands.guild_only()
     async def removefavorite(self, ctx, *, who: str = None):
 
         # Getting the author
         authorID = str(ctx.author.id)
 
-        # If the author doesn't have a collection, create it
-        if not self.mongo_instance.doesCollectionExist(database_name=self.dbName, collection_name=authorID):
-            self.mongo_instance.createCollection(database_name=self.dbName, collection_name=authorID)
-
-        favorites = await self._favorite_users(authorID)
+        favorites = await self._favorite_users(ctx.guild.id, authorID)
         if not favorites:
             await ctx.channel.send("You don't have any favorites to remove!")
             return
@@ -159,8 +163,9 @@ class Favorites(commands.Cog):
                 "(numbers are in **$displayfavorites**). No need to @-ping them.")
             return
 
-        # Removing the member as a favorite for the author
-        self.mongo_instance.removeCollectionEntry(database_name=self.dbName, collection_name=authorID, payload={"id": target_id})
+        # Removing the member as a favorite for the author (this server only)
+        self._col().delete_many({"guild_id": str(ctx.guild.id),
+                                 "owner_id": authorID, "fav_id": target_id})
 
         # Leave no trace in the channel: the invoking command names who got
         # removed, so it goes too (not possible in DMs, hence the guard).
@@ -179,6 +184,7 @@ class Favorites(commands.Cog):
                       description='Returns the full list of favorites for the user who issued the command.',
                       brief='Displays your favorites.',
                       aliases=["df"])
+    @commands.guild_only()
     async def displayfavorites(self, ctx):
         """
         Displays the favorites of the user who issued the command.
@@ -187,13 +193,13 @@ class Favorites(commands.Cog):
         # Getting the author
         authorID = str(ctx.author.id)
 
-        favorites = await self._favorite_users(authorID)
+        favorites = await self._favorite_users(ctx.guild.id, authorID)
 
         # If there are documents in the collection; if the user has favorites specified
         if favorites:
 
             # Numbered so entries can be removed by position, without a ping
-            message = "Here are your favorites:\n"
+            message = "Here are your favorites in this server:\n"
             for position, (uid, user) in enumerate(favorites, start=1):
                 name = user.name if user else f"unknown user ({uid})"
                 message += f"{position}. {name}\n"
@@ -206,10 +212,11 @@ class Favorites(commands.Cog):
         # Sending the list to the channel.
         await ctx.channel.send(message)
 
-    def _favorite_ids(self, memberID):
-        """The set of user IDs (as strings) that memberID has favorited."""
-        return {str(d["id"]) for d in self.mongo_instance.returnCollectionEntries(
-            database_name=self.dbName, collection_name=memberID)}
+    def _favorite_ids(self, guild_id, memberID):
+        """The set of user IDs (as strings) that memberID has favorited in
+        this guild."""
+        return {str(d["fav_id"]) for d in self._col().find(
+            {"guild_id": str(guild_id), "owner_id": str(memberID)})}
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
@@ -220,9 +227,14 @@ class Favorites(commands.Cog):
         # The CreateRoom trigger channel isn't a real VC, just a doorway that
         # immediately moves you into your own room. Treat it as no-channel: no
         # alert for stepping into it, and landing in the created room right
-        # after counts as the actual connect.
-        lobby_name = getattr(self.client.get_cog("CreateRoom"), "createRoomName",
-                             "🔧create room🔧")
+        # after counts as the actual connect. The trigger name comes from the
+        # rooms cog's per-guild config.
+        lobby_name = "🔧create room🔧"
+        rooms_cog = self.client.get_cog("CreateRoom")
+        if rooms_cog is not None:
+            rooms_conf = rooms_cog._conf(member.guild.id)
+            if rooms_conf and rooms_conf.get("trigger_channel"):
+                lobby_name = rooms_conf["trigger_channel"]
         before_channel = before.channel
         if before_channel is not None and before_channel.name == lobby_name:
             before_channel = None
@@ -246,7 +258,7 @@ class Favorites(commands.Cog):
         guild = member.guild
         sent = 0
 
-        for recipient_id in self._favorite_ids(joiner_id):
+        for recipient_id in self._favorite_ids(guild.id, joiner_id):
             # Never notify yourself about your own join (e.g. a stale self-favorite).
             if recipient_id == joiner_id:
                 continue
@@ -258,8 +270,8 @@ class Favorites(commands.Cog):
             if recipient.voice and recipient.voice.channel and recipient.voice.channel.id == channel.id:
                 continue
 
-            # (1) Mutual: the recipient must also have the joiner favorited.
-            if joiner_id not in self._favorite_ids(recipient_id):
+            # (1) Mutual: the recipient must also have the joiner favorited here.
+            if joiner_id not in self._favorite_ids(guild.id, recipient_id):
                 continue
 
             # (2) The recipient must be able to see the channel the joiner joined.

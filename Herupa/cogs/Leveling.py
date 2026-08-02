@@ -124,6 +124,9 @@ class Leveling(commands.Cog):
     async def on_message(self, message):
         if message.guild is None:
             return
+        fm = self.client.get_cog("FeatureManager")
+        if fm is not None and not fm.is_enabled(message.guild.id, "leveling"):
+            return
         # Wordle bot's daily results grant a once-a-day bonus (handled before the
         # usual bot filter, since the Wordle bot is itself a bot).
         if message.author.id == WORDLE_BOT_ID:
