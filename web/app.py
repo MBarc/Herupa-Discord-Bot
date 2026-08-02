@@ -1085,7 +1085,48 @@ def minecraft(request: Request):
                          "missing": rid not in role_names})
     return page(request, "minecraft.html", feature_off=False, configured=True,
                 online=online, players=players, wl_rows=wl_rows, roles=roles,
-                mappings=mappings, address=mc.get("address") or mc.get("rcon_host"))
+                mappings=mappings, address=mc.get("address") or mc.get("rcon_host"),
+                channels=text_channels(gid),
+                bridge_channel_id=mc.get("bridge_channel_id"))
+
+
+@app.post("/minecraft/bridge")
+def minecraft_bridge(request: Request, channel_id: str = Form("none")):
+    if (r := guard(request)):
+        return r
+    gid = current_gid(request)
+    mc = mc_conf(gid)
+    if mc is None:
+        return back("/minecraft", err="No Minecraft server is configured for this server.")
+    if channel_id == "none":
+        mongo["accounts"]["config"].update_one(
+            {"guild_id": gid}, {"$unset": {"minecraft.bridge_channel_id": ""}})
+        audit("minecraft.bridge", f"off in {gid}")
+        return back("/minecraft", ok="Bridge turned off: Discord messages no longer "
+                                     "relay in game. The in-game feed keeps posting "
+                                     "until the minecraft feature (or its webhook) "
+                                     "is removed.")
+    if channel_id not in {c["id"] for c in text_channels(gid)}:
+        return back("/minecraft", err="That channel doesn't exist here.")
+    mongo["accounts"]["config"].update_one(
+        {"guild_id": gid},
+        {"$set": {"minecraft.bridge_channel_id": channel_id}}, upsert=True)
+    note = ""
+    wid = mc.get("bridge_webhook_id")
+    if wid:
+        # The game->Discord feed posts to this webhook, so move it too and
+        # the whole bridge follows the channel.
+        try:
+            api("PATCH", f"/webhooks/{wid}", {"channel_id": channel_id})
+        except RuntimeError as e:
+            note = f" But the in-game feed's webhook wouldn't move: {e}"
+    else:
+        note = (" But I don't know this server's bridge webhook "
+                "(no bridge_webhook_id in the config), so the in-game feed "
+                "stays where it was.")
+    audit("minecraft.bridge", f"-> {channel_id} in {gid}")
+    return back("/minecraft", ok="Bridge moved: that channel now talks to the "
+                                 "Minecraft server both ways." + note)
 
 
 @app.post("/minecraft/roles")

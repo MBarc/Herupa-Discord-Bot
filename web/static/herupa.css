@@ -457,3 +457,5 @@ input[type="checkbox"] { width: auto; accent-color: var(--blossom); }
 .mc-map { margin: 10px 0 14px; }
 .mc-map td { padding: 5px 8px 5px 0; }
 .mc-map select, .mc-map input { width: 100%; }
+.inline-form { display: flex; gap: 8px; align-items: center; }
+.inline-form select { max-width: 320px; }

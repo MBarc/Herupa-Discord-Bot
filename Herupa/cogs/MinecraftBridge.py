@@ -16,9 +16,18 @@ name and head. Herupa only ever sees those as normal webhook messages.
 MULTI-SERVER: per-guild config lives in the SAME "minecraft" block of the
 accounts config that AccountLink owns (db "accounts", collection "config"):
   "bridge_channel_id": "123..."    relay messages from this channel
+  "bridge_webhook_id": "456..."    the tailer's webhook (so moves follow)
 plus the existing rcon_host / rcon_port / rcon_password keys. No block, or
 no bridge_channel_id, means no bridge for that guild. Config is read per
 message (bridge traffic is low-volume, matching AccountLink).
+
+CHOOSING THE CHANNEL -- $mcbridge (managers only; also on the web UI's
+Minecraft page): bare = current status, "here" or a #channel = move the
+bridge there, "off" = stop relaying Discord messages in game. Moving the
+bridge also MOVES THE WEBHOOK to the new channel, so the game->Discord feed
+follows without touching the Minecraft host. "off" can't stop the feed (the
+tailer posts to the webhook no matter what this cog thinks), so the reply
+says as much.
 
 Everything sits behind the "accounts" + "minecraft" $features, same as the
 whitelist sync.
@@ -64,6 +73,86 @@ class MinecraftBridge(commands.Cog):
         fm = self.client.get_cog("FeatureManager")
         return fm is None or (fm.is_enabled(guild_id, "accounts")
                               and fm.is_enabled(guild_id, "minecraft"))
+
+    # ----------------------------- $mcbridge -----------------------------
+
+    async def _move_webhook(self, mc, channel):
+        """Point the tailer's webhook at the new channel. Returns a note for
+        the reply when the game->Discord side could NOT follow."""
+        wid = mc.get("bridge_webhook_id")
+        if not wid:
+            return ("\n⚠️ I don't know this server's bridge webhook "
+                    "(no bridge_webhook_id in the config), so the in-game "
+                    "feed stays where it was.")
+        try:
+            hook = await self.client.fetch_webhook(int(wid))
+            if hook.channel_id != channel.id:
+                await hook.edit(channel=channel,
+                                reason="Minecraft bridge channel moved")
+        except discord.NotFound:
+            return ("\n⚠️ The bridge webhook seems to be deleted, so the "
+                    "in-game feed can't follow. It needs to be recreated and "
+                    "its URL updated on the Minecraft host.")
+        except discord.HTTPException as e:
+            return f"\n⚠️ I couldn't move the in-game feed's webhook: {e}"
+        return ""
+
+    @commands.command(name="mcbridge")
+    @commands.guild_only()
+    async def mcbridge(self, ctx, *, where: str = None):
+        """Bare = status, "here" / #channel = put the bridge there, "off" =
+        stop relaying Discord messages in game."""
+        fm = self.client.get_cog("FeatureManager")
+        if fm is None or not fm.is_manager(ctx.author):
+            await ctx.send("Only the owner, admins, or bot managers can move "
+                           "the Minecraft chat bridge.")
+            return
+        mc = self._mc_conf(ctx.guild.id)
+        if mc is None:
+            await ctx.send("This server has no Minecraft server configured yet "
+                           "(the accounts config needs a minecraft block first).")
+            return
+        col = self.mongo.client[self.db][self.config_col]
+        where = (where or "").strip()
+
+        if not where:
+            current = mc.get("bridge_channel_id")
+            if current:
+                await ctx.send(f"⛏️ The Minecraft chat bridge lives in "
+                               f"<#{current}>. `$mcbridge here` moves it to "
+                               "the current channel, `$mcbridge off` stops the "
+                               "Discord side.")
+            else:
+                await ctx.send("⛏️ The chat bridge is off. Run `$mcbridge here` "
+                               "in the channel that should talk to the server "
+                               "(or `$mcbridge #channel`).")
+            return
+
+        if where.lower() == "off":
+            col.update_one({"guild_id": str(ctx.guild.id)},
+                           {"$unset": {"minecraft.bridge_channel_id": ""}})
+            await ctx.send("⛏️ Bridge off: messages here no longer reach the "
+                           "game. The in-game feed still posts to its channel; "
+                           "turn off the `minecraft` feature (or remove the "
+                           "webhook) to silence that too.")
+            return
+
+        if where.lower() in ("here", "set"):
+            channel = ctx.channel
+        else:
+            try:
+                channel = await commands.TextChannelConverter().convert(ctx, where)
+            except commands.BadArgument:
+                await ctx.send("I don't know that channel. Use `$mcbridge here`, "
+                               "`$mcbridge #channel`, or `$mcbridge off`.")
+                return
+        col.update_one({"guild_id": str(ctx.guild.id)},
+                       {"$set": {"minecraft.bridge_channel_id": str(channel.id)}},
+                       upsert=True)
+        note = await self._move_webhook(mc, channel)
+        await ctx.send(f"⛏️ The Minecraft chat bridge now lives in "
+                       f"{channel.mention}: messages there show up in game, "
+                       f"and game chat lands there.{note}")
 
     # ----------------------------- relay -----------------------------
 
