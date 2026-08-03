@@ -100,6 +100,15 @@ $lookup authorisation reuses the per-guild moderation ladder from the
 DeputyModeration/Timeout config (Mongo "moderation"/"config"), so there is one
 definition of "moderator" per server. Guilds with no accounts config get a
 "not set up" message.
+
+VERIFY BUTTON + CLEAN CHANNELS: the pinned "Get Verified" embed carries a
+persistent ✅ Verify button (custom_id herupa_verify_start) whose whole flow
+is ephemeral -- pending proof is checked, otherwise the $link picker/modal
+pipeline runs. Channels listed in config "clean_channel_ids" (the verify
+channel) are kept spotless: every non-pinned message is deleted CLEAN_TTL
+seconds after it appears (Herupa's replies included), with a 10-minute
+janitor sweep catching anything posted while the bot was down. Needs Manage
+Messages there. Both respect the "accounts" $feature.
 '''
 
 import sys
@@ -111,6 +120,7 @@ import hashlib
 import uuid as uuidlib
 import asyncio
 import urllib.parse
+from datetime import datetime, timedelta, timezone
 
 import aiohttp
 import discord
@@ -148,6 +158,11 @@ def offline_uuid(name):
 
 
 GROUP_RE = re.compile(r"^[A-Za-z0-9_-]{1,36}$")
+
+# How long messages survive in a "clean" channel (the verify channel):
+# long enough to read a reply, short enough that the pinned embed is all
+# anyone ever really sees.
+CLEAN_TTL = 60
 
 
 class LuckPermsGroupModal(discord.ui.Modal, title="Map to a LuckPerms group"):
@@ -201,6 +216,23 @@ class LinkUsernameModal(discord.ui.Modal):
             await interaction.followup.send(payload, ephemeral=True)
 
 
+class VerifyStartView(discord.ui.View):
+    """Persistent ✅ Verify button on the pinned embed in a guild's verify
+    channel. Everything it opens is ephemeral, so verifying leaves no trace
+    in the channel: pending proof gets checked, otherwise the link picker /
+    username modal runs -- same pipeline as $link."""
+
+    def __init__(self, cog):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(label="Verify", emoji="✅",
+                       style=discord.ButtonStyle.success,
+                       custom_id="herupa_verify_start")
+    async def start(self, interaction, button):
+        await self.cog.verify_button(interaction)
+
+
 class AccountLink(commands.Cog):
 
     # ------------------------- per-game registries -------------------------
@@ -237,12 +269,16 @@ class AccountLink(commands.Cog):
         self.mod_db = "moderation"
         self.mod_config_col = "config"
         self.mongo = HerupaMongo()
+        self._ccache = {}   # guild_id -> (expires, conf | None), janitor only
 
     async def cog_load(self):
+        self.client.add_view(VerifyStartView(self))
         self.reconcile.start()
+        self.janitor.start()
 
     async def cog_unload(self):
         self.reconcile.cancel()
+        self.janitor.cancel()
 
     # ----------------------------- config helpers -----------------------------
 
@@ -253,6 +289,81 @@ class AccountLink(commands.Cog):
             if doc.get("guild_id") == gid:
                 return doc
         return None
+
+    def _conf_cached(self, guild_id):
+        """30s-cached config, for the janitor's on_message path only (it
+        fires for every guild message; everything else reads live)."""
+        gid = str(guild_id)
+        hit = self._ccache.get(gid)
+        now = time.monotonic()
+        if hit and hit[0] > now:
+            return hit[1]
+        conf = self._conf(gid)
+        self._ccache[gid] = (now + 30, conf)
+        return conf
+
+    # ------------------------- clean channels (janitor) -------------------------
+    # Guilds can list channels (config "clean_channel_ids", e.g. the verify
+    # channel) where every message evaporates after CLEAN_TTL seconds so
+    # only the pinned embed remains. The Verify button makes the normal flow
+    # ephemeral; this catches typed commands, replies, and stray chatter.
+
+    async def _delayed_clean(self, message):
+        await asyncio.sleep(CLEAN_TTL)
+        try:
+            fresh = await message.channel.fetch_message(message.id)
+            if not fresh.pinned:
+                await fresh.delete()
+        except discord.HTTPException:
+            pass   # already gone, or we lost permission -- either is fine
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        # Herupa's own replies age out too, so no bot skip here. The free
+        # checks and the cached config read come before anything costly.
+        if message.guild is None:
+            return
+        fm = self.client.get_cog("FeatureManager")
+        if fm is not None and not fm.is_enabled(message.guild.id, "accounts"):
+            return
+        conf = self._conf_cached(message.guild.id)
+        if not conf or str(message.channel.id) not in (conf.get("clean_channel_ids") or []):
+            return
+        asyncio.create_task(self._delayed_clean(message))
+
+    @tasks.loop(minutes=10)
+    async def janitor(self):
+        """Sweep pass for whatever on_message missed (downtime, edits made
+        while the bot was offline). Deletes one-by-one with a per-pass cap:
+        gentle on rate limits, and steady state is near zero anyway."""
+        if not self.client.guilds:
+            return   # guild cache not primed yet (on_ready is unreliable here)
+        fm = self.client.get_cog("FeatureManager")
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=CLEAN_TTL)
+        for doc in self.mongo.returnCollectionEntries(
+                database_name=self.db, collection_name=self.config_col):
+            gid = doc.get("guild_id")
+            ids = doc.get("clean_channel_ids") or []
+            guild = self.client.get_guild(int(gid)) if gid else None
+            if guild is None or not ids:
+                continue
+            if fm is not None and not fm.is_enabled(guild.id, "accounts"):
+                continue
+            for cid in ids:
+                channel = guild.get_channel(int(cid))
+                if channel is None:
+                    continue
+                deleted = 0
+                try:
+                    async for msg in channel.history(limit=100, before=cutoff):
+                        if msg.pinned:
+                            continue
+                        await msg.delete()
+                        deleted += 1
+                        if deleted >= 30:
+                            break
+                except discord.HTTPException as e:
+                    print(f"[AccountLink] janitor {cid}: {e}")
 
     def _is_mod(self, member):
         """Moderation-ladder check, shared definition with DeputyModeration:
@@ -804,16 +915,11 @@ class AccountLink(commands.Cog):
             view.add_item(select)
         await ctx.send("Let's get you linked:", view=view)
 
-    @commands.command(name="verify")
-    @commands.guild_only()
-    async def verify(self, ctx):
-        """Finish pending links: every one is checked through its own game's
-        proof checker (VERIFIERS registry)."""
-        conf = self._conf(ctx.guild.id)
-        if conf is None:
-            await ctx.send("Account linking isn't set up for this server yet.")
-            return
-        pending = [l for l in self._links_for(ctx.author.id, ctx.guild.id)
+    async def _run_verify(self, guild, member, conf):
+        """Check every pending link through its game's proof checker
+        (VERIFIERS registry). Returns one result line per link -- shared by
+        $verify and the pinned Verify button."""
+        pending = [l for l in self._links_for(member.id, guild.id)
                    if not l.get("verified") and l.get("code")]
         lines = []
         for link in sorted(pending, key=lambda l: l.get("type", "")):
@@ -826,7 +932,7 @@ class AccountLink(commands.Cog):
                 ok, fail_text = await getattr(self, verifier["checker"])(link)
             except Exception:
                 lines.append(f"⚠️ I couldn't reach {game} just now. "
-                             "Try `$verify` again in a moment.")
+                             "Try again in a moment.")
                 continue
             if not ok:
                 lines.append(fail_text)
@@ -836,20 +942,89 @@ class AccountLink(commands.Cog):
                     if k not in ("_id", "user_id", "guild_id", "type", "username",
                                  "linked_at", "verified", "code", "proof")}
             keep.update({"verified": True, "proof": verifier["proof"]})
-            self._save_link(ctx.author.id, ctx.guild.id, link["type"],
+            self._save_link(member.id, guild.id, link["type"],
                             link["username"], keep)
-            notes = await self._apply_grants(ctx.guild, ctx.author, conf,
+            notes = await self._apply_grants(guild, member, conf,
                                              link["type"], link["username"])
-            msg = (f"✅ Verified! **{link['username']}** belongs to {ctx.author.mention}. "
+            msg = (f"✅ Verified! **{link['username']}** belongs to {member.mention}. "
                    "You can delete the code from your profile now.")
             if notes:
                 msg += " Also: " + ", and ".join(notes) + "."
             lines.append(msg)
+        return lines
+
+    @commands.command(name="verify")
+    @commands.guild_only()
+    async def verify(self, ctx):
+        """Finish pending links: every one is checked through its own game's
+        proof checker (VERIFIERS registry)."""
+        conf = self._conf(ctx.guild.id)
+        if conf is None:
+            await ctx.send("Account linking isn't set up for this server yet.")
+            return
+        lines = await self._run_verify(ctx.guild, ctx.author, conf)
         if not lines:
             await ctx.send("You have nothing waiting to be verified. "
                            "Start with `$link`.")
             return
         await ctx.send("\n".join(lines), allowed_mentions=discord.AllowedMentions.none())
+
+    async def verify_button(self, interaction):
+        """The pinned Verify button. Pending proof gets checked; otherwise
+        the link picker (or straight to the username modal when the server
+        offers one type). Every reply is ephemeral -- the channel stays
+        exactly as pinned."""
+        guild = interaction.guild
+        conf = self._conf(guild.id)
+        if conf is None:
+            await interaction.response.send_message(
+                "Account linking isn't set up for this server yet.", ephemeral=True)
+            return
+        member = interaction.user
+        if any(not l.get("verified") and l.get("code")
+               and l.get("type") in self.VERIFIERS
+               for l in self._links_for(member.id, guild.id)):
+            await interaction.response.defer(ephemeral=True)
+            lines = await self._run_verify(guild, member, conf)
+            await interaction.followup.send(
+                "\n".join(lines) or "Nothing left to verify.", ephemeral=True)
+            return
+
+        types = [t.lower() for t in (conf.get("types") or [])]
+        if not self._mc_feature_on(guild.id):
+            types = [t for t in types if t != "minecraft"]
+        linked = {l.get("type") for l in self._links_for(member.id, guild.id)}
+        remaining = [t for t in types if t not in linked]
+        if not remaining:
+            if linked:
+                await interaction.response.send_message(
+                    "You're all set: everything this server offers is already "
+                    "linked to you. `$unlink` removes one if you need a redo.",
+                    ephemeral=True)
+            else:
+                await interaction.response.send_message(
+                    "This server hasn't chosen any linkable account types yet.",
+                    ephemeral=True)
+            return
+        if len(remaining) == 1:
+            await interaction.response.send_modal(
+                LinkUsernameModal(self, conf, remaining[0]))
+            return
+        view = discord.ui.View(timeout=60)
+        select = discord.ui.Select(
+            placeholder="Which account do you want to link?",
+            options=[discord.SelectOption(label=t.capitalize(), value=t,
+                                          emoji=self.TYPE_EMOJI.get(t, "🎮"))
+                     for t in remaining][:25])
+
+        async def chosen(inner):
+            await inner.response.send_modal(
+                LinkUsernameModal(self, conf, select.values[0]))
+
+        select.callback = chosen
+        view.add_item(select)
+        await interaction.response.send_message("Let's get you linked:",
+                                                view=view, ephemeral=True)
 
     @commands.command(name="unlink")
     @commands.guild_only()
