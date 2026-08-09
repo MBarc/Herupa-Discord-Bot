@@ -26,6 +26,9 @@ tellraw); this script never reads Discord, so the two can't loop.
 
 Stdlib only. Config via environment (see mc-bridge.service):
   MC_BRIDGE_WEBHOOKS  JSON {"WorldName": "webhook url", ..., "default": url}
+  MC_BRIDGE_SILENT    comma-separated player names (bot accounts) whose
+                      joins/leaves are NOT announced -- their chat, deaths,
+                      and advancements still post
   MC_LOG              log path (default /opt/minecraft/server/logs/latest.log)
   MC_PROPS            server.properties path (default alongside the log)
 """
@@ -41,6 +44,8 @@ import urllib.error
 import urllib.request
 
 HOOKS = json.loads(os.environ.get("MC_BRIDGE_WEBHOOKS", "{}"))
+SILENT = {n.strip().lower()
+          for n in os.environ.get("MC_BRIDGE_SILENT", "").split(",") if n.strip()}
 LOG = os.environ.get("MC_LOG", "/opt/minecraft/server/logs/latest.log")
 PROPS = os.environ.get("MC_PROPS", "/opt/minecraft/server/server.properties")
 REFRESH = 15   # max staleness (seconds) of the player->world map when routing
@@ -233,12 +238,14 @@ def handle(line):
             "content": text[:1900]})
     elif (m := JOIN.match(body)):
         name = m.group(1)
-        refresh_map(force=True)
-        post(player_world.get(name), {"content": f"🟢 **{name}** joined the game"})
+        refresh_map(force=True)   # still track silent bots' worlds
+        if name.lower() not in SILENT:
+            post(player_world.get(name), {"content": f"🟢 **{name}** joined the game"})
     elif (m := LEAVE.match(body)):
         name = m.group(1)
         world = player_world.pop(name, None)
-        post(world, {"content": f"🔴 **{name}** left the game"})
+        if name.lower() not in SILENT:
+            post(world, {"content": f"🔴 **{name}** left the game"})
     elif (m := ADVANCEMENT.match(body)):
         name, kind, what = m.groups()
         post(locate(name), {"content": f"🏆 **{name}** has {kind} **{what}**"})
