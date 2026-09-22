@@ -42,7 +42,7 @@ thread: {"guild_id", "forum_id", "thread_id", "title", "status", "priority",
 "completed_at", "embed_message_id"}. Config is read per event (project
 activity is low-volume), so Mongo edits apply immediately.
 
-Requires the guild to have forum channels (Community enabled). Respects the
+Forum channels work without Community enabled. Respects the
 $feature "projects" toggle, including the buttons and the forum listener.
 '''
 
@@ -549,9 +549,6 @@ class Projects(commands.Cog):
 
     async def _create_project(self, guild, category, author, name, about=None):
         """Create the project forum + config. Returns (reply text, forum|None)."""
-        if "COMMUNITY" not in guild.features:
-            return ("This server needs Community enabled for forum channels "
-                    "(Server Settings, Enable Community).", None)
         topic = about or f"Project board: {name}. New posts become tracked tasks."
         conf = self._conf(guild.id) or {}
         kwargs = {}
