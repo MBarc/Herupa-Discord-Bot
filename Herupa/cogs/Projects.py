@@ -198,6 +198,27 @@ class Projects(commands.Cog):
     def _task(self, thread_id):
         return self._tasks_col().find_one({"thread_id": str(thread_id)})
 
+    @staticmethod
+    def _category_id(channel):
+        """The category a command was typed in, seen through a thread.
+
+        A task thread's own category_id is None, so walk up to the forum first.
+        """
+        if isinstance(channel, discord.Thread):
+            channel = channel.parent
+        return getattr(channel, "category_id", None)
+
+    def _forums_in_category(self, guild, forums, category_id):
+        """The configured project forums that live in one category."""
+        if category_id is None:
+            return []
+        out = []
+        for fid in forums:
+            ch = guild.get_channel(int(fid))
+            if ch is not None and ch.category_id == category_id:
+                out.append(fid)
+        return out
+
     def _feature_on(self, guild_id):
         fm = self.client.get_cog("FeatureManager")
         return fm is None or fm.is_enabled(guild_id, "projects")
@@ -722,22 +743,54 @@ class Projects(commands.Cog):
         if not forums:
             await ctx.send("No projects here yet. An admin can make one with `$project create <name>`.")
             return
+        # Where the command was typed is the strongest hint about which project
+        # is meant. A server can hold several projects, and more than one of
+        # them can share a name across categories - resolving by name alone
+        # silently picked whichever Mongo happened to return first.
+        here = self._forums_in_category(
+            ctx.guild, forums, self._category_id(ctx.channel))
+
         forum_id = None
         if " | " in title:
             proj, title = (p.strip() for p in title.split(" | ", 1))
-            forum_id = next((fid for fid, fc in forums.items()
-                             if fc["name"].casefold() == proj.casefold()), None)
-            if forum_id is None:
+            matches = [fid for fid, fc in forums.items()
+                       if fc["name"].casefold() == proj.casefold()]
+            if not matches:
                 names = ", ".join(fc["name"] for fc in forums.values())
                 await ctx.send(f"I don't know a project called **{proj}**. Projects here: {names}.")
                 return
+            local = [fid for fid in matches if fid in here]
+            if len(local) == 1:
+                forum_id = local[0]
+            elif len(matches) == 1:
+                forum_id = matches[0]
+            else:
+                # Same name in several categories and none of them is the one
+                # we are standing in. Guessing here is how a task lands in the
+                # wrong project, so ask instead.
+                where = ", ".join(
+                    f"#{ctx.guild.get_channel(int(fid))} in "
+                    f"{getattr(ctx.guild.get_channel(int(fid)), 'category', None) or 'no category'}"
+                    for fid in matches)
+                await ctx.send(
+                    f"There is more than one project called **{proj}** ({where}). "
+                    "Run this from a channel in the right category, or inside one "
+                    "of its task threads.")
+                return
+        elif isinstance(ctx.channel, discord.Thread) and str(ctx.channel.parent_id) in forums:
+            # Inside a task thread is the most specific signal there is.
+            forum_id = str(ctx.channel.parent_id)
+        elif len(here) == 1:
+            # Exactly one project in this category: that is the obvious one.
+            forum_id = here[0]
         elif len(forums) == 1:
             forum_id = next(iter(forums))
-        elif isinstance(ctx.channel, discord.Thread) and str(ctx.channel.parent_id) in forums:
-            forum_id = str(ctx.channel.parent_id)
         else:
-            names = ", ".join(fc["name"] for fc in forums.values())
-            await ctx.send(f"Which project? Use `$task <project> | <title>`. Projects here: {names}.")
+            scope = here or list(forums)
+            names = ", ".join(forums[fid]["name"] for fid in scope)
+            hint = (" (in this category)" if here and len(here) < len(forums) else "")
+            await ctx.send(f"Which project? Use `$task <project> | <title>`. "
+                           f"Projects here{hint}: {names}.")
             return
         forum = ctx.guild.get_channel(int(forum_id))
         if forum is None:
