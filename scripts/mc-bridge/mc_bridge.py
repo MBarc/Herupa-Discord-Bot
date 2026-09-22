@@ -50,8 +50,14 @@ LOG = os.environ.get("MC_LOG", "/opt/minecraft/server/logs/latest.log")
 PROPS = os.environ.get("MC_PROPS", "/opt/minecraft/server/server.properties")
 REFRESH = 15   # max staleness (seconds) of the player->world map when routing
 
-INFO = re.compile(r"^\[\d{2}:\d{2}:\d{2}\] \[Server thread/INFO\]: (.*)$")
-CHAT = re.compile(r"^(?:\[Not Secure\] )?<([A-Za-z0-9_]{1,16})> (.*)$")
+INFO = re.compile(r"^\[\d{2}:\d{2}:\d{2}\] \[(.+?)/INFO\]: (.*)$")
+# Chat reaches the log on Paper's "Async Chat Thread - #N" and carries whatever
+# prefixes the chat plugin adds: "[Not Secure] [Head Chill] Name: hi" with
+# EssentialsX Chat, plain "<Name> hi" without it. Group 1 keeps those [...]
+# groups (the player's LuckPerms title lives in there), then either form of
+# the speaker, then the message.
+CHAT = re.compile(r"^((?:\[[^\]]*\]\s*)*)"
+                  r"(?:<([A-Za-z0-9_]{1,16})>|([A-Za-z0-9_]{1,16})\s*:)\s+(.*)$")
 JOIN = re.compile(r"^([A-Za-z0-9_]{1,16}) joined the game$")
 LEAVE = re.compile(r"^([A-Za-z0-9_]{1,16}) left the game$")
 ADVANCEMENT = re.compile(r"^([A-Za-z0-9_]{1,16}) has "
@@ -137,18 +143,24 @@ def world_key(world):
     if not world:
         return None
     for suffix in ("_nether", "_the_end"):
-        if world.endswith(suffix):
+        if world.lower().endswith(suffix):
             return world[: -len(suffix)]
     return world
 
 
 def refresh_worlds():
+    """`mv list` pages at 8 worlds, so walk every page."""
     global worlds
-    out = []
-    for line in rcon("mv list").splitlines():
-        m = re.match(r"^([A-Za-z0-9_-]+) - (NORMAL|NETHER|THE_END)$", line.strip())
-        if m:
-            out.append(m.group(1))
+    out, page, pages = [], 1, 1
+    while page <= pages:
+        reply = rcon("mv list" if page == 1 else f"mv list --page {page}")
+        for line in reply.splitlines():
+            line = line.strip()
+            if (m := re.match(r"^\[Page \d+ of (\d+)\]$", line)):
+                pages = int(m.group(1))
+            elif (m := re.match(r"^([A-Za-z0-9_-]+) - (NORMAL|NETHER|THE_END)$", line)):
+                out.append(m.group(1))
+        page += 1
     if out:
         worlds = out
 
@@ -213,6 +225,23 @@ def post(world, payload, tries=3):
     print("webhook gave up on a line", file=sys.stderr)
 
 
+def speaker(prefixes, name):
+    """"[Head Chill] MoneyShark" -- the player's LuckPerms title exactly as the
+    chat plugin printed it, minus [Not Secure] and minus the duplicate
+    EssentialsX emits (it prefixes a display name that already has one).
+    Discord rejects a few substrings in webhook usernames, so a title carrying
+    one falls back to the bare player name rather than losing the message."""
+    seen, tags = set(), []
+    for tag in re.findall(r"\[([^\]]*)\]", prefixes or ""):
+        tag = tag.strip()
+        if not tag or tag.lower() == "not secure" or tag.lower() in seen:
+            continue
+        seen.add(tag.lower())
+        tags.append(f"[{tag}]")
+    label = " ".join(tags + [name])[:80]
+    return name if any(b in label.lower() for b in ("discord", "clyde")) else label
+
+
 def locate(name):
     """The world a player is in, refreshing the map if it's stale or the
     player is unknown (they may have just joined or changed worlds)."""
@@ -228,14 +257,26 @@ def handle(line):
     m = INFO.match(line.rstrip("\n"))
     if not m:
         return
-    body = m.group(1)
+    thread, body = m.group(1), COLORS.sub("", m.group(2))
 
-    if (m := CHAT.match(body)):
-        name, text = m.groups()
+    if "Chat Thread" in thread:
+        # Only chat lands here, so the loose "Name: text" form is safe.
+        if (m := CHAT.match(body)):
+            name = m.group(2) or m.group(3)
+            post(locate(name), {
+                "username": speaker(m.group(1), name),
+                "avatar_url": f"https://mc-heads.net/avatar/{name}/64",
+                "content": m.group(4)[:1900]})
+        return
+    if thread != "Server thread":
+        return
+
+    if (m := CHAT.match(body)) and m.group(2):   # "<Name> hi" broadcast
+        name = m.group(2)
         post(locate(name), {
-            "username": name,
+            "username": speaker(m.group(1), name),
             "avatar_url": f"https://mc-heads.net/avatar/{name}/64",
-            "content": text[:1900]})
+            "content": m.group(4)[:1900]})
     elif (m := JOIN.match(body)):
         name = m.group(1)
         refresh_map(force=True)   # still track silent bots' worlds

@@ -99,7 +99,7 @@ class Help(commands.Cog):
                 "$avatarpic {@member} · $ap": "Show a member's avatar.",
             }),
             ("voice", "🔊 Voice & Rooms", {
-                "$crpm": "Toggle privacy mode for your auto-created voice room.",
+                "$crpm": "Toggle privacy mode for your auto-created voice room. PRIVATE means only you and your favorites can join, staff included. If staff do need in, everyone in the room is told who and why.",
                 "$migrate {channel id} · $m": "Move everyone in your voice channel to another one.",
                 "$addfavorite {@member} · $af": "Favorite a member and get pinged when they join a VC (must be mutual).",
                 "$removefavorite {name/ID/number} · $rf": "Remove a favorite by name, user ID, or their number in $displayfavorites, so you never have to ping them.",
@@ -168,6 +168,9 @@ class Help(commands.Cog):
                 "$purgatory {@member} · $purg": "Send a member to purgatory.",
                 "$rolepanel [single] {title} {@role...} · $rp":
                     "Post a self-assign role button panel. 'single' = picking one role swaps out the others.",
+                "$modjoin {@owner | #room} {reason} · $mj":
+                    "Override your way into a PRIVATE voice room. The reason is posted in the room and saved to the log, access ends when you leave, and joining one without this gets you disconnected.",
+                "$modjoins": "The last 10 private-room overrides: who, whose room, and why.",
             }))
 
         if is_ticket_staff:
@@ -202,6 +205,7 @@ class Help(commands.Cog):
                            "modstaff": "moderation", "projects": "projects"}
         COMMAND_FEATURE = {
             "$crpm": "rooms",
+            "$modjoin {@owner | #room} {reason} · $mj": "rooms", "$modjoins": "rooms",
             "$rank {@member} · $level": "leveling", "$daily": "leveling",
             "$leaderboard {stat} · $lb": "leveling", "$mock": "leveling",
             "$birthday {date} · $bday": "birthdays", "$birthdays · $bdays": "birthdays",
