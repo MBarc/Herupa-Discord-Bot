@@ -8,6 +8,7 @@
 # first await (see acquire()).
 
 import asyncio
+import re
 import time
 
 import discord
@@ -29,6 +30,23 @@ YTDL_OPTS = {
 # The stream URL is a long-lived HTTPS link; let ffmpeg ride out CDN hiccups.
 FFMPEG_BEFORE = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
 FFMPEG_OPTS = "-vn"
+
+# YouTube buckets a slice of playback URLs into experiment 51946838, stamped
+# into the URL's fexp= parameter. Those URLs answer EVERY client with 403 (not
+# just ffmpeg - curl and plain urllib get refused too), so no header or player
+# client setting rescues them. The bucket is re-rolled on each extraction,
+# though, so resolving again is the cure. It hit ~1 in 6 resolves when this was
+# measured on 2026-08-12; five attempts puts the odds of striking out at ~0.01%.
+REFUSED_FEXP = "51946838"
+RESOLVE_ATTEMPTS = 5
+
+
+def _is_refused_url(url):
+    """True if a stream URL carries YouTube's 403-to-everyone experiment flag."""
+    match = re.search(r"[?&]fexp=([^&]*)", url or "")
+    # The flag is bare digits, so the percent-encoded comma separators between
+    # the other flags don't need unescaping first.
+    return bool(match) and REFUSED_FEXP in match.group(1)
 
 # Personality is looked up by color word in the bot's username, so a future
 # "Yellow Hibiki" only needs an entry here (or falls back to the default).
@@ -89,13 +107,21 @@ async def resolve_track(loop, query, requested_by):
     for the caller to turn into a user-facing message.
     """
     def _extract():
-        with yt_dlp.YoutubeDL(YTDL_OPTS) as ydl:
-            info = ydl.extract_info(query, download=False)
-        if info and "entries" in info:
-            entries = [e for e in info["entries"] if e]
-            info = entries[0] if entries else None
-        if not info:
-            raise yt_dlp.utils.DownloadError("no results")
+        info = None
+        for _ in range(RESOLVE_ATTEMPTS):
+            with yt_dlp.YoutubeDL(YTDL_OPTS) as ydl:
+                info = ydl.extract_info(query, download=False)
+            if info and "entries" in info:
+                entries = [e for e in info["entries"] if e]
+                info = entries[0] if entries else None
+            if not info:
+                raise yt_dlp.utils.DownloadError("no results")
+            if not _is_refused_url(info.get("url")):
+                return info
+        # Every roll came up in the refused bucket. Hand back the last result
+        # anyway so playback fails loudly through the usual path.
+        print(f"Hibiki: all {RESOLVE_ATTEMPTS} resolves of {query!r} landed in "
+              f"YouTube's refused bucket")
         return info
 
     info = await loop.run_in_executor(None, _extract)
